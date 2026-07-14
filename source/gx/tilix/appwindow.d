@@ -754,6 +754,7 @@ private:
 
     /**
      * AI tools + recent sessions popover.
+     * Recent sessions are split into Grok / Codex accordions.
      */
     Popover createAIPopover(Widget parent) {
         Popover pop = new Popover(parent);
@@ -761,9 +762,57 @@ private:
         outer.setMarginTop(4);
         outer.setMarginBottom(4);
         auto listBox = new Box(Orientation.VERTICAL, 0);
-        auto sw = makeScrollBox(listBox, 380);
+        auto sw = makeScrollBox(listBox, 400);
         outer.packStart(sw, true, true, 0);
         outer.setSizeRequest(400, -1);
+
+        // Accordion state for Grok / Codex expanders
+        bool grokExpanded = true;
+        bool codexExpanded = true;
+
+        void packSessionExpander(string title, AISessionEntry[] sessions, string kind,
+                                 ref bool expandedFlag) {
+            string header = format("%s  (%d)", title, sessions.length);
+            auto exp = new Expander(header);
+            exp.setMarginStart(2);
+            exp.setMarginEnd(2);
+            exp.setMarginTop(1);
+            exp.setMarginBottom(1);
+            exp.setExpanded(expandedFlag);
+            exp.addOnNotify(delegate(ParamSpec, ObjectG) {
+                expandedFlag = exp.getExpanded();
+            }, "expanded");
+
+            auto inner = new Box(Orientation.VERTICAL, 0);
+            inner.setMarginStart(6);
+            if (sessions.length == 0) {
+                auto empty = new Label(_("No sessions yet"));
+                empty.setHalign(GtkAlign.START);
+                empty.setMarginTop(4);
+                empty.setMarginBottom(4);
+                empty.setMarkup("<span size='small' foreground='#888888'>" ~
+                    _("No sessions yet") ~ "</span>");
+                inner.packStart(empty, false, false, 0);
+            } else {
+                foreach (s; sessions) {
+                    string titleTxt = s.summary;
+                    // strip listUnified prefix if present
+                    if (titleTxt.startsWith("[Grok] ")) titleTxt = titleTxt[7 .. $];
+                    else if (titleTxt.startsWith("[Codex] ")) titleTxt = titleTxt[8 .. $];
+                    if (titleTxt.length > 58) titleTxt = titleTxt[0 .. 55] ~ "...";
+                    string sub = s.updated;
+                    if (s.status.length && s.status != "local") sub ~= " · " ~ s.status;
+                    string id = s.id;
+                    string k = (s.kind.length > 0) ? s.kind : kind;
+                    inner.packStart(makeActionButton(titleTxt, sub, {
+                        pop.hide();
+                        resumeUnifiedSession(id, k);
+                    }), false, false, 0);
+                }
+            }
+            exp.add(inner);
+            listBox.packStart(exp, false, false, 0);
+        }
 
         void rebuild() {
             try {
@@ -776,29 +825,14 @@ private:
                 if (recentN > 40) recentN = 40;
 
                 listBox.packStart(makeSectionLabel(_("RECENT SESSIONS")), false, false, 0);
-                auto recent = listUnifiedRecentSessions(recentN);
-                popoverLog(format("ai recent count=%s", recent.length));
-                if (recent.length == 0) {
-                    listBox.packStart(makeActionButton(
-                        _("No sessions found"),
-                        _("Run Grok/Codex once, or check Preferences → AI Tools"),
-                        {}), false, false, 0);
-                } else {
-                    foreach (s; recent) {
-                        string title = s.summary;
-                        if (title.startsWith("[Grok] ")) title = "Grok · " ~ title[7 .. $];
-                        else if (title.startsWith("[Codex] ")) title = "Codex · " ~ title[8 .. $];
-                        if (title.length > 58) title = title[0 .. 55] ~ "...";
-                        string sub = s.updated;
-                        if (s.status.length) sub ~= " · " ~ s.status;
-                        string id = s.id;
-                        string st = s.status;
-                        listBox.packStart(makeActionButton(title, sub, {
-                            pop.hide();
-                            resumeUnifiedSession(id, st);
-                        }), false, false, 0);
-                    }
-                }
+
+                // Separate FS lists — never mix kinds
+                auto grokSessions = listGrokSessionsFromFS(recentN);
+                auto codexSessions = listCodexSessionsFromFS(recentN);
+                popoverLog(format("ai recent grok=%s codex=%s", grokSessions.length, codexSessions.length));
+
+                packSessionExpander(_("Grok"), grokSessions, "grok", grokExpanded);
+                packSessionExpander(_("Codex"), codexSessions, "codex", codexExpanded);
 
                 listBox.packStart(makeSectionLabel(_("TOOLS")), false, false, 0);
                 auto tools = loadAITools(gsSettings);
@@ -868,15 +902,28 @@ private:
         return pop;
     }
 
-    void resumeUnifiedSession(string id, string status) {
+    /**
+     * Resume a session by explicit kind ("grok" | "codex").
+     * Never infer tool from free-text status — that misrouted Grok → Codex.
+     */
+    void resumeUnifiedSession(string id, string kind) {
         if (id.length == 0) return;
+        string k = kind.toLower().strip();
+        // Tolerate legacy status strings ("grok/local", "codex", …)
+        bool wantCodex = (k == "codex" || k.startsWith("codex/") || k.endsWith("/codex"));
+        bool wantGrok = (k == "grok" || k.startsWith("grok/") || k.endsWith("/grok"));
+        if (!wantCodex && !wantGrok) {
+            // Unknown kind: refuse to guess Codex (safer default is Grok for this fork)
+            if (k.canFind("codex")) wantCodex = true;
+            else wantGrok = true;
+        }
+
         auto tools = loadAITools(gsSettings);
-        bool wantCodex = status.canFind("codex");
         AITool pick;
         bool found = false;
         foreach (t; tools) {
             if (wantCodex && t.isCodexLike() && !t.isRemote()) { pick = t; found = true; break; }
-            if (!wantCodex && t.isGrokLike() && !t.isRemote()) { pick = t; found = true; break; }
+            if (wantGrok && t.isGrokLike() && !t.isRemote()) { pick = t; found = true; break; }
         }
         if (!found) {
             if (wantCodex) runConfiguredCommand("codex resume " ~ id, "Codex");
@@ -888,6 +935,7 @@ private:
             showErrorDialog(this, _("No resume command configured"), pick.name);
             return;
         }
+        popoverLog(format("resume kind=%s tool=%s cmd=%s", k, pick.name, cmd));
         runConfiguredCommand(cmd, pick.name);
     }
 

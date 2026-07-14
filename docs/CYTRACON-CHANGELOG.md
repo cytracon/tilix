@@ -1,5 +1,13 @@
 # Cytracon Tilix Changelog
 
+## 1.9.8-cytracon.8 — 2026-07-14
+
+### Fixes
+- **Grok sessions no longer resume with Codex** — resume uses explicit `kind` (`grok`|`codex`), not fragile `status.canFind("codex")`
+
+### UI
+- AI menu: **accordion split** — separate expanders for recent **Grok** and **Codex** sessions (like bookmark themes)
+
 ## 1.9.8-cytracon.1 — 2026-07-14
 
 ### Security

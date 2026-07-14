@@ -24,7 +24,17 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# Prefer real repo layout; if this script lives outside the repo (e.g. Google Drive),
+# fall back to ~/src/tilix or TILIX_REPO.
+if [[ -d "${SCRIPT_DIR}/../source/gx/tilix" ]]; then
+  REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+elif [[ -n "${TILIX_REPO:-}" && -d "${TILIX_REPO}" ]]; then
+  REPO_ROOT="$(cd "${TILIX_REPO}" && pwd)"
+elif [[ -d "${HOME}/src/tilix/source/gx/tilix" ]]; then
+  REPO_ROOT="$(cd "${HOME}/src/tilix" && pwd)"
+else
+  REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+fi
 
 REMOTE_USER="${REMOTE_USER:-bbachmann}"
 LAPTOP_HOST="${LAPTOP_HOST:-bbachmann-laptop}"
@@ -102,11 +112,11 @@ host_online() {
 build_package() {
   local bin version stage tar
   bin="$(resolve_binary)"
-  version="$("$bin" --version 2>/dev/null | sed -n 's/.*Tilix version:[[:space:]]*//p' | head -1)"
+  version="$("$bin" --version 2>/dev/null | sed -n 's/.*Tilix version:[[:space:]]*//p' | head -1 | tr -d '[:space:]')"
   version="${version:-unknown}"
-  # sanitize for filename
+  # sanitize for filename (no trailing underscores)
   local ver_file
-  ver_file="$(echo "$version" | tr -c 'A-Za-z0-9._-' '_')"
+  ver_file="$(echo "$version" | tr -c 'A-Za-z0-9._-' '_' | sed 's/_\+$//')"
   tar="${PKG_DIR}/tilix-cytracon-${ver_file}-linux-x86_64.tar.gz"
   stage="${PKG_DIR}/${STAGE_NAME}"
 
