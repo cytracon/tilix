@@ -100,11 +100,16 @@ private:
         }
         if (sessions.length == 0) {
             auto iter = ls.createIter();
-            ls.setValue(iter, COL_SUMMARY, _("No sessions found (check list command / network)"));
+            string msg = _("No sessions found.");
+            if (lastListDiagnostic.length > 0) {
+                msg ~= " [" ~ lastListDiagnostic ~ "]";
+            }
+            ls.setValue(iter, COL_SUMMARY, msg);
             ls.setValue(iter, COL_UPDATED, "");
             ls.setValue(iter, COL_STATUS, "");
             ls.setValue(iter, COL_ID, "");
         }
+        setTitle(format(_("Resume %s (%d)"), tool.name, sessions.length));
     }
 
 public:

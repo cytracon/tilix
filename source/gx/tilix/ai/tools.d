@@ -10,6 +10,7 @@ import std.conv;
 import std.datetime;
 import std.experimental.logger;
 import std.file;
+import std.json;
 import std.path;
 import std.process;
 import std.regex;
@@ -29,7 +30,7 @@ import gx.tilix.preferences;
  *   name|command|resume_command|list_command
  *
  * resume_command may contain {id} placeholder.
- * list_command optional — output lines should start with a UUID.
+ * list_command optional — output lines should contain a UUID.
  */
 struct AITool {
     string name;
@@ -47,11 +48,7 @@ struct AITool {
         if (parts.length >= 1) t.name = parts[0].strip();
         if (parts.length >= 2) t.command = parts[1].strip();
         if (parts.length >= 3) t.resumeCommand = parts[2].strip();
-        if (parts.length >= 4) t.listCommand = parts[3 .. $].join("|").strip(); // allow | in list cmd? rare
-        // re-parse carefully: only first 3 pipes split name/cmd/resume, rest is list
-        if (parts.length > 4) {
-            t.listCommand = parts[3 .. $].join("|").strip();
-        }
+        if (parts.length >= 4) t.listCommand = parts[3 .. $].join("|").strip();
         return t;
     }
 
@@ -63,22 +60,105 @@ struct AITool {
     bool supportsResume() const {
         return resumeCommand.length > 0;
     }
+
+    bool isGrokLike() const {
+        auto n = name.toLower();
+        auto c = command.toLower();
+        return n.canFind("grok") || c.canFind("grok");
+    }
+
+    bool isCodexLike() const {
+        auto n = name.toLower();
+        auto c = command.toLower();
+        return n.canFind("codex") || c.canFind("codex");
+    }
+
+    bool isRemote() const {
+        return command.canFind("ssh") || listCommand.canFind("ssh");
+    }
 }
 
 struct AISessionEntry {
     string id;
     string summary;
-    string updated; // free-form date string
+    string updated;
     string status;
 }
 
-/** Default Cytracon AI tools (desktop + server wrappers). */
+/** Last diagnostic from listSessionsForTool (for UI). */
+__gshared string lastListDiagnostic;
+
+private string homeDir() {
+    string h = Util.getHomeDir();
+    if (h.length == 0) {
+        h = environment.get("HOME");
+    }
+    return h;
+}
+
+/** PATH as used by interactive shells (GNOME apps often miss ~/.local/bin). */
+string userPathPrefix() {
+    string h = homeDir();
+    return buildPath(h, ".local", "bin") ~ ":" ~
+           buildPath(h, ".grok", "bin") ~ ":" ~
+           buildPath(h, ".npm-global", "bin") ~ ":" ~
+           buildPath(h, "bin") ~ ":" ~
+           "/usr/local/bin:/usr/bin:/bin";
+}
+
+/**
+ * Run a shell command with a sane PATH and stderr merged into stdout.
+ * GNOME-launched Tilix often has PATH without ~/.local/bin.
+ */
+Tuple!(int, string) runUserShell(string command) {
+    string wrapped = "export PATH=\"" ~ userPathPrefix() ~ ":$PATH\"; " ~ command ~ " 2>&1";
+    try {
+        auto p = executeShell(wrapped);
+        return tuple(p.status, p.output);
+    } catch (Exception e) {
+        return tuple(1, e.msg);
+    }
+}
+
+string resolveGrokBinary() {
+    string h = homeDir();
+    string[] candidates = [
+        buildPath(h, ".local", "bin", "grok"),
+        buildPath(h, ".grok", "bin", "grok"),
+        "/usr/local/bin/grok",
+        "/usr/bin/grok"
+    ];
+    foreach (c; candidates) {
+        if (exists(c)) return c;
+    }
+    return "grok";
+}
+
+string resolveCodexBinary() {
+    string h = homeDir();
+    string[] candidates = [
+        buildPath(h, ".local", "bin", "codex"),
+        "/usr/local/bin/codex",
+        "/usr/bin/codex"
+    ];
+    foreach (c; candidates) {
+        if (exists(c)) return c;
+    }
+    // npm global often only has codex.js via symlink in /usr/local
+    return "codex";
+}
+
+/** Default Cytracon AI tools (absolute-ish paths where possible). */
 string[] defaultAIToolSettings() {
+    string grok = resolveGrokBinary();
+    string codex = resolveCodexBinary();
+    string key = buildPath(homeDir(), ".ssh", "id_cytracon2");
+    string sshBase = "ssh -o BatchMode=yes -i " ~ key ~ " root@157.90.81.172";
     return [
-        "Grok|grok|grok --resume {id}|grok sessions list -n 30",
-        "Codex|codex|codex resume {id}|",
-        "Grok AI (Server)|ssh -t -i ~/.ssh/id_cytracon2 root@157.90.81.172 grokai|ssh -t -i ~/.ssh/id_cytracon2 root@157.90.81.172 'cd /AI && /AI/.grok/bin/grok --resume {id}'|ssh -i ~/.ssh/id_cytracon2 root@157.90.81.172 'cd /AI && /AI/.grok/bin/grok sessions list -n 20'",
-        "Codex AI (Server)|ssh -t -i ~/.ssh/id_cytracon2 root@157.90.81.172 codexai|ssh -t -i ~/.ssh/id_cytracon2 root@157.90.81.172 'cd /AI && codex resume {id}'|"
+        "Grok|" ~ grok ~ "|" ~ grok ~ " --resume {id}|" ~ grok ~ " sessions list -n 40",
+        "Codex|" ~ codex ~ "|" ~ codex ~ " resume {id}|",
+        "Grok AI (Server)|" ~ sshBase ~ " -t grokai|" ~ sshBase ~ " -t 'cd /AI && /AI/.grok/bin/grok --resume {id}'|" ~ sshBase ~ " 'cd /AI && /AI/.grok/bin/grok sessions list -n 25'",
+        "Codex AI (Server)|" ~ sshBase ~ " -t codexai|" ~ sshBase ~ " -t 'cd /AI && codex resume {id}'|"
     ];
 }
 
@@ -127,33 +207,35 @@ private auto uuidRe = ctRegex!(`([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0
  */
 AISessionEntry[] parseSessionListOutput(string output) {
     AISessionEntry[] result;
+    bool[string] seen;
     foreach (line; output.splitLines()) {
         line = line.strip();
         if (line.length == 0) continue;
         if (line.startsWith("SESSION ID") || line.startsWith("---") || line.startsWith("(no")) continue;
+        // skip pure error noise without UUID
         auto m = matchFirst(line, uuidRe);
         if (!m) continue;
+        if (m.hit in seen) continue;
+        seen[m.hit] = true;
+
         AISessionEntry e;
         e.id = m.hit;
-        // remaining text after UUID as summary-ish
         auto rest = line[m.pre.length + m.hit.length .. $].strip();
-        // Drop date/status columns roughly: keep last long token chunk as summary
         e.summary = rest;
-        // Try to extract dates (YYYY-MM-DD)
+
         auto dateRe = ctRegex!(`(\d{4}-\d{2}-\d{2})`);
         auto dates = matchAll(rest, dateRe);
         string[] foundDates;
         foreach (d; dates) foundDates ~= d.hit;
         if (foundDates.length >= 2) e.updated = foundDates[1];
         else if (foundDates.length == 1) e.updated = foundDates[0];
-        // Status word after dates
+
         auto statusRe = ctRegex!(`\b(local|remote|both|archived)\b`, "i");
         auto sm = matchFirst(rest, statusRe);
         if (sm) e.status = sm.hit;
-        // Clean summary: text after last status or after dates
+
         auto parts = rest.split();
-        if (parts.length > 3) {
-            // find status index
+        if (parts.length > 0) {
             size_t start = 0;
             foreach (i, p; parts) {
                 if (p == "local" || p == "remote" || p == "both" || p == "archived") {
@@ -173,37 +255,130 @@ AISessionEntry[] parseSessionListOutput(string output) {
 }
 
 /**
- * List sessions for a tool via list_command, or filesystem fallback for Codex.
+ * List sessions for a tool via list_command, with PATH fix + FS fallbacks.
  */
-AISessionEntry[] listSessionsForTool(AITool tool, int limit = 30) {
+AISessionEntry[] listSessionsForTool(AITool tool, int limit = 40) {
+    lastListDiagnostic = "";
     AISessionEntry[] entries;
+    string[] diagnostics;
+
     if (tool.listCommand.length > 0) {
-        try {
-            auto p = executeShell(tool.listCommand);
-            if (p.status == 0 || p.output.length > 0) {
-                entries = parseSessionListOutput(p.output);
-            } else {
-                warningf("list_command failed (%s): %s", p.status, p.output);
+        auto p = runUserShell(tool.listCommand);
+        diagnostics ~= format("list_cmd status=%s out_len=%s", p[0], p[1].length);
+        if (p[1].length > 0) {
+            entries = parseSessionListOutput(p[1]);
+            diagnostics ~= format("parsed=%s", entries.length);
+            if (entries.length == 0 && p[1].length < 400) {
+                diagnostics ~= "raw: " ~ p[1].replace("\n", " | ");
             }
-        } catch (Exception e) {
-            warningf("list_command error: %s", e.msg);
+        } else if (p[0] != 0) {
+            diagnostics ~= "list_cmd produced no output (is PATH missing tools?)";
         }
     }
-    if (entries.length == 0 && tool.name.toLower().canFind("codex") && !tool.command.canFind("ssh")) {
-        entries = listCodexSessionsFromFS(limit);
+
+    // Filesystem fallbacks (local tools)
+    if (entries.length == 0 && !tool.isRemote()) {
+        if (tool.isGrokLike()) {
+            auto fs = listGrokSessionsFromFS(limit);
+            diagnostics ~= format("grok_fs=%s", fs.length);
+            entries = fs;
+        }
+        if (entries.length == 0 && tool.isCodexLike()) {
+            auto fs = listCodexSessionsFromFS(limit);
+            diagnostics ~= format("codex_fs=%s", fs.length);
+            entries = fs;
+        }
     }
+
+    // Remote grok without working list: still try local FS as weak fallback? skip.
+
     if (entries.length > limit) {
         entries = entries[0 .. limit];
+    }
+    lastListDiagnostic = diagnostics.join("; ");
+    if (entries.length == 0) {
+        warningf("AI session list empty for %s: %s", tool.name, lastListDiagnostic);
+    }
+    return entries;
+}
+
+/** Scan ~/.grok/sessions for session dirs (+ summary.json when present). */
+AISessionEntry[] listGrokSessionsFromFS(int limit = 40) {
+    AISessionEntry[] entries;
+    string root = buildPath(homeDir(), ".grok", "sessions");
+    if (!exists(root)) {
+        lastListDiagnostic ~= " grok_sessions_dir_missing=" ~ root;
+        return entries;
+    }
+    Tuple!(SysTime, string, string)[] found; // mtime, id, summary
+    try {
+        foreach (string dir; dirEntries(root, SpanMode.depth)) {
+            if (!dir.isDir) continue;
+            string base = baseName(dir);
+            auto m = matchFirst(base, uuidRe);
+            if (!m) continue;
+            // only leaf session dirs (contain chat_history or summary)
+            string summaryPath = buildPath(dir, "summary.json");
+            string chatPath = buildPath(dir, "chat_history.jsonl");
+            if (!exists(summaryPath) && !exists(chatPath)) continue;
+
+            SysTime mt;
+            try { mt = timeLastModified(dir); } catch (Exception) { continue; }
+
+            string summary = "grok " ~ m.hit[0 .. min(8, m.hit.length)];
+            if (exists(summaryPath)) {
+                try {
+                    auto j = parseJSON(readText(summaryPath));
+                    foreach (key; ["generated_title", "session_summary", "summary", "title", "preview"]) {
+                        if (key in j && j[key].type == JSONType.string && j[key].str.length > 0) {
+                            summary = j[key].str;
+                            break;
+                        }
+                    }
+                    if ("info" in j && j["info"].type == JSONType.object) {
+                        auto info = j["info"];
+                        if ("cwd" in info && info["cwd"].type == JSONType.string) {
+                            // keep title, cwd is optional context
+                        }
+                    }
+                    if (exists(summaryPath)) {
+                        try { mt = timeLastModified(summaryPath); } catch (Exception) {}
+                    }
+                } catch (Exception) {}
+            }
+            if (summary.length > 100) summary = summary[0 .. 100] ~ "…";
+            found ~= tuple(mt, m.hit, summary);
+        }
+    } catch (Exception e) {
+        warningf("Grok FS scan failed: %s", e.msg);
+        return entries;
+    }
+    sort!((a, b) => a[0] > b[0])(found);
+    bool[string] seen;
+    foreach (item; found) {
+        if (item[1] in seen) continue;
+        seen[item[1]] = true;
+        if (entries.length >= limit) break;
+        AISessionEntry e;
+        e.id = item[1];
+        auto iso = item[0].toISOExtString();
+        e.updated = iso.length >= 10 ? iso[0 .. 10] : iso;
+        e.summary = item[2];
+        e.status = "local";
+        entries ~= e;
     }
     return entries;
 }
 
 /** Scan ~/.codex/sessions for recent rollouts. */
-AISessionEntry[] listCodexSessionsFromFS(int limit = 30) {
+AISessionEntry[] listCodexSessionsFromFS(int limit = 40) {
     AISessionEntry[] entries;
-    string root = buildPath(Util.getHomeDir(), ".codex", "sessions");
-    if (!exists(root)) return entries;
-    Tuple!(SysTime, string)[] found; // mtime, id
+    string root = buildPath(homeDir(), ".codex", "sessions");
+    if (!exists(root)) {
+        lastListDiagnostic ~= " codex_sessions_dir_missing=" ~ root;
+        return entries;
+    }
+    Tuple!(SysTime, string)[] found;
     try {
         foreach (string file; dirEntries(root, SpanMode.depth)) {
             if (!file.endsWith(".jsonl")) continue;
@@ -228,6 +403,11 @@ AISessionEntry[] listCodexSessionsFromFS(int limit = 30) {
         e.updated = iso.length >= 10 ? iso[0 .. 10] : iso;
         e.summary = "codex " ~ e.id[0 .. min(8, e.id.length)];
         e.status = "local";
+        // Try first line of jsonl for a prompt snippet
+        try {
+            string path = "";
+            // re-find path is expensive; skip
+        } catch (Exception) {}
         entries ~= e;
     }
     return entries;
