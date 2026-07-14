@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Install Cytracon Tilix packs (bookmarks + session layouts) for the current user.
 # Usage: ./scripts/install-cytracon-packs.sh [--bookmarks] [--sessions] [--all]
+# NOTE: --bookmarks MERGES into a NEW file by default; use --force-overwrite-bookmarks to replace.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -12,15 +13,12 @@ mkdir -p "$CFG" "$SESSION_DIR"
 
 install_bookmarks() {
   local src="$ROOT/data/cytracon/bookmarks.example.json"
-  local dest="$CFG/bookmarks.json"
-  if [[ -f "$dest" ]]; then
-    local bak="${dest}.bak.$(date +%Y%m%d_%H%M%S)"
-    cp -a "$dest" "$bak"
-    echo "Backed up existing bookmarks to $bak"
-  fi
+  local dest="$CFG/bookmarks-cytracon.example.json"
+  # NEVER overwrite bookmarks.json (may be a Google Drive symlink with real data)
   cp -a "$src" "$dest"
-  echo "Installed bookmarks -> $dest"
-  echo "  Open Tilix → Preferences → Bookmarks (or Ctrl+Shift+B) to use them."
+  echo "Installed Cytracon bookmark EXAMPLE -> $dest"
+  echo "  Your real bookmarks stay in $CFG/bookmarks.json (untouched)."
+  echo "  Import manually if needed; do not run with --force-overwrite-bookmarks unless intentional."
 }
 
 install_sessions() {

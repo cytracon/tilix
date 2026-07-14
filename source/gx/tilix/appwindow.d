@@ -18,6 +18,8 @@ import std.process;
 import std.string;
 import std.uuid;
 
+import gx.gtk.threads;
+
 import cairo.Context;
 import cairo.ImageSurface;
 
@@ -76,6 +78,7 @@ import gtk.Overlay;
 import gtk.Popover;
 import gtk.Revealer;
 import gtk.ScrolledWindow;
+import gtk.SearchEntry;
 import gtk.Separator;
 import gtk.Settings;
 import gtk.Stack;
@@ -100,8 +103,10 @@ import gx.gtk.util;
 import gx.i18n.l10n;
 
 import gx.tilix.ai.aidialog;
+import gx.tilix.ai.quickactions;
 import gx.tilix.ai.tools;
 import gx.tilix.application;
+import gx.tilix.bookmark.manager;
 import gx.tilix.closedialog;
 import gx.tilix.cmdparams;
 import gx.tilix.common;
@@ -152,6 +157,8 @@ private:
     enum ACTION_WIN_FULLSCREEN = "fullscreen";
     enum ACTION_WIN_BOOKMARKS = "bookmarks";
     enum ACTION_WIN_AI = "ai-menu";
+    enum ACTION_WIN_QUICK = "quick-menu";
+    enum ACTION_WIN_COPY_SESSION_LOG = "copy-session-log";
     enum ACTION_SESSION_REORDER_PREVIOUS = "reorder-previous-session";
     enum ACTION_SESSION_REORDER_NEXT = "reorder-next-session";
 
@@ -171,7 +178,8 @@ private:
     SimpleActionGroup sessionActions;
     MenuButton mbSessionActions;
     MenuButton mbAI;
-    Button btnBookmarks;
+    MenuButton mbBookmarks;
+    MenuButton mbQuick;
     SimpleAction saSyncInput;
     SimpleAction saViewSideBar;
     SimpleAction saSessionAddRight;
@@ -179,6 +187,7 @@ private:
     SimpleAction saSessionAddAuto;
     SimpleAction saBookmarks;
     SimpleAction saAI;
+    SimpleAction saQuick;
 
     Label lblSideBar;
 
@@ -398,15 +407,12 @@ private:
             }
         });
 
-        // Bookmarks (header bar)
-        btnBookmarks = new Button("user-bookmarks-symbolic", IconSize.MENU);
-        btnBookmarks.setTooltipText(_("Bookmarks"));
-        btnBookmarks.setFocusOnClick(false);
-        btnBookmarks.setActionName(getActionDetailedName("win", ACTION_WIN_BOOKMARKS));
-        // Fallback if symbolic icon missing
-        if (btnBookmarks.getImage() is null) {
-            btnBookmarks.setImage(new Image("starred-symbolic", IconSize.MENU));
-        }
+        // Bookmarks (searchable popover)
+        mbBookmarks = new MenuButton();
+        mbBookmarks.setFocusOnClick(false);
+        mbBookmarks.setTooltipText(_("Bookmarks"));
+        mbBookmarks.setImage(new Image("user-bookmarks-symbolic", IconSize.MENU));
+        mbBookmarks.setPopover(createBookmarkPopover(mbBookmarks));
 
         // AI tools menu
         mbAI = new MenuButton();
@@ -414,6 +420,13 @@ private:
         mbAI.setTooltipText(_("AI tools and resume"));
         mbAI.setImage(new Image("system-run-symbolic", IconSize.MENU));
         mbAI.setPopover(createAIPopover(mbAI));
+
+        // Ops / Quick menu
+        mbQuick = new MenuButton();
+        mbQuick.setFocusOnClick(false);
+        mbQuick.setTooltipText(_("Ops / Shops / Server"));
+        mbQuick.setImage(new Image("applications-system-symbolic", IconSize.MENU));
+        mbQuick.setPopover(createQuickPopover(mbQuick));
 
         //Header Bar
         HeaderBar header = new HeaderBar();
@@ -427,15 +440,130 @@ private:
         }
         header.packStart(btnAddHorizontal);
         header.packStart(btnAddVertical);
-        header.packStart(btnBookmarks);
-        header.packStart(mbAI);
+        bool showBm = true, showAi = true, showQ = true;
+        try {
+            showBm = gsSettings.getBoolean(SETTINGS_HEADER_SHOW_BOOKMARKS_KEY);
+            showAi = gsSettings.getBoolean(SETTINGS_HEADER_SHOW_AI_KEY);
+            showQ = gsSettings.getBoolean(SETTINGS_HEADER_SHOW_QUICK_KEY);
+        } catch (Exception) {}
+        if (showBm) header.packStart(mbBookmarks);
+        if (showAi) header.packStart(mbAI);
+        if (showQ) header.packStart(mbQuick);
         header.packEnd(mbSessionActions);
         header.packEnd(tbFind);
         return header;
     }
 
+    void clearBoxChildren(Box outer) {
+        auto children = outer.getChildren();
+        if (children !is null) {
+            foreach (w; children.toArray!Widget()) {
+                outer.remove(w);
+                w.destroy();
+            }
+        }
+    }
+
+    Button makeMenuBtn(string label, void delegate() onClick) {
+        auto b = new Button(label);
+        b.setHalign(GtkAlign.FILL);
+        b.setRelief(ReliefStyle.NONE);
+        b.addOnClicked(delegate(Button) { onClick(); });
+        return b;
+    }
+
+    Label makeSectionLabel(string text) {
+        auto secLbl = new Label(format("<b>%s</b>", text));
+        secLbl.setUseMarkup(true);
+        secLbl.setHalign(GtkAlign.START);
+        secLbl.setMarginTop(6);
+        secLbl.setMarginBottom(2);
+        return secLbl;
+    }
+
     /**
-     * Build popover for AI tools: New / Resume last / Resume…
+     * Searchable bookmarks popover
+     */
+    Popover createBookmarkPopover(Widget parent) {
+        Popover pop = new Popover(parent);
+        auto outer = new Box(Orientation.VERTICAL, 6);
+        outer.setMarginTop(8);
+        outer.setMarginBottom(8);
+        outer.setMarginStart(8);
+        outer.setMarginEnd(8);
+        outer.setSizeRequest(360, -1);
+
+        auto se = new SearchEntry();
+        se.setPlaceholderText(_("Filter bookmarks…"));
+        outer.add(se);
+
+        auto listBox = new Box(Orientation.VERTICAL, 0);
+        auto sw = new ScrolledWindow(listBox);
+        sw.setPolicy(PolicyType.NEVER, PolicyType.AUTOMATIC);
+        sw.setMinContentHeight(280);
+        sw.setMaxContentHeight(400);
+        sw.setShadowType(ShadowType.ETCHED_IN);
+        outer.add(sw);
+
+        void rebuild(string filter) {
+            clearBoxChildren(listBox);
+            string[] names;
+            string[] cmds;
+            collectBookmarkLeaves(bmMgr.root, "", names, cmds);
+            string f = filter.strip().toLower();
+            int shown = 0;
+            foreach (i, name; names) {
+                if (f.length && name.toLower().indexOf(f) < 0 && cmds[i].toLower().indexOf(f) < 0)
+                    continue;
+                string n = name;
+                string c = cmds[i];
+                auto b = makeMenuBtn(n, {
+                    pop.hide();
+                    runConfiguredCommand(c, n);
+                });
+                b.setTooltipText(c);
+                listBox.add(b);
+                shown++;
+                if (shown >= 80) break;
+            }
+            if (shown == 0) {
+                listBox.add(new Label(_("No matches")));
+            }
+            listBox.showAll();
+        }
+
+        se.addOnSearchChanged(delegate(SearchEntry e) { rebuild(e.getText()); });
+        pop.add(outer);
+        pop.addOnShow(delegate(Widget) {
+            se.setText("");
+            rebuild("");
+            se.grabFocus();
+        });
+
+        // Classic dialog fallback footer
+        auto bClassic = makeMenuBtn(_("Open classic chooser…"), {
+            pop.hide();
+            openBookmarksFromHeader();
+        });
+        outer.add(bClassic);
+        return pop;
+    }
+
+    void collectBookmarkLeaves(FolderBookmark folder, string prefix, ref string[] names, ref string[] cmds) {
+        if (folder is null) return;
+        foreach (bm; folder) {
+            auto sub = cast(FolderBookmark) bm;
+            if (sub !is null) {
+                collectBookmarkLeaves(sub, prefix ~ bm.name ~ " / ", names, cmds);
+            } else {
+                names ~= prefix ~ bm.name;
+                cmds ~= bm.terminalCommand;
+            }
+        }
+    }
+
+    /**
+     * Build popover for AI tools + unified recent
      */
     Popover createAIPopover(Widget parent) {
         Popover pop = new Popover(parent);
@@ -444,94 +572,84 @@ private:
         outer.setMarginBottom(6);
         outer.setMarginStart(6);
         outer.setMarginEnd(6);
+        outer.setSizeRequest(320, -1);
 
         void rebuild() {
-            // Clear children
-            auto children = outer.getChildren();
-            if (children !is null) {
-                foreach (w; children.toArray!Widget()) {
-                    outer.remove(w);
-                    w.destroy();
+            clearBoxChildren(outer);
+
+            int recentN = 15;
+            try { recentN = gsSettings.getInt(SETTINGS_AI_UNIFIED_RECENT_KEY); } catch (Exception) {}
+            if (recentN < 1) recentN = 1;
+            if (recentN > 50) recentN = 50;
+
+            outer.add(makeSectionLabel(_("Recent AI")));
+            auto recent = listUnifiedRecentSessions(recentN);
+            if (recent.length == 0) {
+                auto empty = new Label(_("No local sessions yet"));
+                empty.setMarginBottom(4);
+                outer.add(empty);
+            } else {
+                auto tools = loadAITools(gsSettings);
+                foreach (s; recent) {
+                    string label = s.summary;
+                    if (label.length > 55) label = label[0 .. 55] ~ "…";
+                    string id = s.id;
+                    string status = s.status;
+                    auto b = makeMenuBtn(label, {
+                        pop.hide();
+                        resumeUnifiedSession(id, status);
+                    });
+                    b.setTooltipText(s.id ~ " · " ~ s.updated);
+                    outer.add(b);
                 }
             }
 
             auto tools = loadAITools(gsSettings);
             if (tools.length == 0) {
-                auto empty = new Label(_("No AI tools configured.\nOpen Preferences → AI Tools."));
-                empty.setMarginTop(8);
-                empty.setMarginBottom(8);
-                outer.add(empty);
+                outer.add(new Label(_("No AI tools configured.\nPreferences → AI Tools.")));
             } else {
                 foreach (tool; tools) {
-                    auto secLbl = new Label(format("<b>%s</b>", tool.name));
-                    secLbl.setUseMarkup(true);
-                    secLbl.setHalign(GtkAlign.START);
-                    secLbl.setMarginTop(6);
-                    secLbl.setMarginBottom(2);
-                    outer.add(secLbl);
-
-                    auto bNew = new Button(format(_("New: %s"), tool.name));
-                    bNew.setHalign(GtkAlign.FILL);
-                    bNew.setRelief(ReliefStyle.NONE);
+                    outer.add(makeSectionLabel(tool.name));
                     AITool toolNew = tool;
-                    bNew.addOnClicked(delegate(Button) {
+                    outer.add(makeMenuBtn(format(_("New: %s"), tool.name), {
                         pop.hide();
-                        runAICommand(toolNew.command);
-                    });
-                    outer.add(bNew);
-
+                        runConfiguredCommand(toolNew.command, toolNew.name);
+                    }));
                     if (tool.supportsResume()) {
-                        auto bResume = new Button(format(_("Resume…: %s"), tool.name));
-                        bResume.setHalign(GtkAlign.FILL);
-                        bResume.setRelief(ReliefStyle.NONE);
                         AITool toolRes = tool;
-                        bResume.addOnClicked(delegate(Button) {
+                        outer.add(makeMenuBtn(format(_("Resume…: %s"), tool.name), {
                             pop.hide();
                             openAIResume(toolRes);
-                        });
-                        outer.add(bResume);
-
-                        // Quick continue variants when command is plain local CLI
-                        if (tool.command == "grok" || tool.command.endsWith("/grok") || tool.command == "grokai") {
-                            auto bCont = new Button(format(_("Continue last: %s"), tool.name));
-                            bCont.setHalign(GtkAlign.FILL);
-                            bCont.setRelief(ReliefStyle.NONE);
+                        }));
+                        string cmdLow = tool.command.toLower();
+                        if (cmdLow.endsWith("grok") || cmdLow.canFind("/grok") || cmdLow == "grokai") {
                             string contCmd = tool.command ~ " -c";
-                            bCont.addOnClicked(delegate(Button) {
+                            outer.add(makeMenuBtn(format(_("Continue last: %s"), tool.name), {
                                 pop.hide();
-                                runAICommand(contCmd);
-                            });
-                            outer.add(bCont);
-                        } else if (tool.command == "codex" || tool.command.endsWith("/codex") || tool.command == "codexai") {
-                            auto bLast = new Button(format(_("Resume last: %s"), tool.name));
-                            bLast.setHalign(GtkAlign.FILL);
-                            bLast.setRelief(ReliefStyle.NONE);
-                            string lastCmd = (tool.command == "codexai")
-                                ? `ssh -t -i ~/.ssh/id_cytracon2 root@157.90.81.172 'cd /AI && codex resume --last'`
-                                : "codex resume --last";
-                            bLast.addOnClicked(delegate(Button) {
+                                runConfiguredCommand(contCmd, tool.name);
+                            }));
+                        } else if (cmdLow.endsWith("codex") || cmdLow.canFind("/codex") || cmdLow == "codexai") {
+                            string lastCmd = tool.isRemote()
+                                ? `ssh -o BatchMode=yes -i ~/.ssh/id_cytracon2 root@157.90.81.172 -t 'cd /AI && codex resume --last'`
+                                : (tool.command ~ " resume --last");
+                            if (!tool.isRemote() && !tool.command.canFind("resume")) {
+                                // command is path to codex binary
+                                lastCmd = tool.command ~ " resume --last";
+                            }
+                            outer.add(makeMenuBtn(format(_("Resume last: %s"), tool.name), {
                                 pop.hide();
-                                runAICommand(lastCmd);
-                            });
-                            outer.add(bLast);
+                                runConfiguredCommand(lastCmd, tool.name);
+                            }));
                         }
                     }
                 }
             }
 
-            auto sep = new Separator(Orientation.HORIZONTAL);
-            sep.setMarginTop(8);
-            sep.setMarginBottom(4);
-            outer.add(sep);
-
-            auto bPref = new Button(_("AI Tools preferences…"));
-            bPref.setRelief(ReliefStyle.NONE);
-            bPref.addOnClicked(delegate(Button) {
+            outer.add(new Separator(Orientation.HORIZONTAL));
+            outer.add(makeMenuBtn(_("AI Tools preferences…"), {
                 pop.hide();
                 tilix.presentPreferences();
-            });
-            outer.add(bPref);
-
+            }));
             outer.showAll();
         }
 
@@ -540,18 +658,157 @@ private:
         return pop;
     }
 
-    void runAICommand(string command) {
-        if (command.length == 0) return;
-        ITerminal term = getActiveTerminal();
-        if (term is null) {
-            showErrorDialog(this, _("No active terminal"), _("AI"));
+    void resumeUnifiedSession(string id, string status) {
+        if (id.length == 0) return;
+        auto tools = loadAITools(gsSettings);
+        bool wantCodex = status.canFind("codex");
+        AITool pick;
+        bool found = false;
+        foreach (t; tools) {
+            if (wantCodex && t.isCodexLike() && !t.isRemote()) { pick = t; found = true; break; }
+            if (!wantCodex && t.isGrokLike() && !t.isRemote()) { pick = t; found = true; break; }
+        }
+        if (!found) {
+            if (wantCodex) runConfiguredCommand("codex resume " ~ id, "Codex");
+            else runConfiguredCommand("grok --resume " ~ id, "Grok");
             return;
         }
-        bool nl = true;
-        try {
-            nl = gsSettings.getBoolean(SETTINGS_AI_FEED_NEWLINE_KEY);
-        } catch (Exception) {}
-        term.feedInput(command, nl);
+        string cmd = pick.buildResume(id);
+        if (cmd.length == 0) {
+            showErrorDialog(this, _("No resume command configured"), pick.name);
+            return;
+        }
+        runConfiguredCommand(cmd, pick.name);
+    }
+
+    /**
+     * Ops / Shops / Server quick menu
+     */
+    Popover createQuickPopover(Widget parent) {
+        Popover pop = new Popover(parent);
+        auto outer = new Box(Orientation.VERTICAL, 0);
+        outer.setMarginTop(6);
+        outer.setMarginBottom(6);
+        outer.setMarginStart(6);
+        outer.setMarginEnd(6);
+        outer.setSizeRequest(340, -1);
+
+        void rebuild() {
+            clearBoxChildren(outer);
+
+            // Shops
+            outer.add(makeSectionLabel(_("Shops")));
+            auto shops = loadShops(gsSettings);
+            foreach (s; shops) {
+                string n = s.name;
+                string c = s.command;
+                outer.add(makeMenuBtn(n, {
+                    pop.hide();
+                    runConfiguredCommand(c, n);
+                }));
+            }
+
+            // Quick actions by section
+            auto actions = loadQuickActions(gsSettings);
+            string[] sections;
+            foreach (a; actions) {
+                if (!sections.canFind(a.section)) sections ~= a.section;
+            }
+            foreach (sec; sections) {
+                outer.add(makeSectionLabel(sec));
+                foreach (a; actions) {
+                    if (a.section != sec) continue;
+                    string n = a.name;
+                    string c = a.command;
+                    outer.add(makeMenuBtn(n, {
+                        pop.hide();
+                        runConfiguredCommand(c, n);
+                    }));
+                }
+            }
+
+            outer.add(new Separator(Orientation.HORIZONTAL));
+            outer.add(makeMenuBtn(_("Load ops session layout"), {
+                pop.hide();
+                loadOpsSessionLayout();
+            }));
+            outer.add(makeMenuBtn(_("Copy terminal output → session log"), {
+                pop.hide();
+                copyOutputToSessionLog();
+            }));
+            outer.add(makeMenuBtn(_("Cytracon preferences…"), {
+                pop.hide();
+                tilix.presentPreferences();
+            }));
+            outer.showAll();
+        }
+
+        pop.add(outer);
+        pop.addOnShow(delegate(Widget) { rebuild(); });
+        return pop;
+    }
+
+    /**
+     * Run a command respecting launch mode + destructive confirm + newline.
+     */
+    void runConfiguredCommand(string command, string label = "") {
+        if (command.length == 0) return;
+
+        bool confirmDest = true;
+        try { confirmDest = gsSettings.getBoolean(SETTINGS_BOOKMARK_CONFIRM_DESTRUCTIVE_KEY); } catch (Exception) {}
+        if (confirmDest && isDestructiveCommand(command)) {
+            auto dlg = new MessageDialog(this, GtkDialogFlags.MODAL, MessageType.WARNING, ButtonsType.OK_CANCEL,
+                format(_("Potentially destructive command%s:\n\n%s\n\nRun anyway?"),
+                    label.length ? " (" ~ label ~ ")" : "", command));
+            scope(exit) dlg.destroy();
+            if (dlg.run() != ResponseType.OK) return;
+        }
+
+        string mode = SETTINGS_CMD_LAUNCH_MODE_CURRENT_VALUE;
+        try { mode = gsSettings.getString(SETTINGS_CMD_LAUNCH_MODE_KEY); } catch (Exception) {}
+
+        void feedActive() {
+            ITerminal term = getActiveTerminal();
+            if (term is null) {
+                showErrorDialog(this, _("No active terminal"), label.length ? label : _("Command"));
+                return;
+            }
+            bool nl = true;
+            try { nl = gsSettings.getBoolean(SETTINGS_AI_FEED_NEWLINE_KEY); } catch (Exception) {}
+            term.feedInput(command, nl);
+        }
+
+        if (mode == SETTINGS_CMD_LAUNCH_MODE_SPLIT_RIGHT_VALUE) {
+            Session session = getCurrentSession();
+            if (session !is null) session.addTerminal(Orientation.HORIZONTAL);
+            threadsAddTimeoutDelegate(250, cast(bool delegate()) {
+                feedActive();
+                return false;
+            });
+            return;
+        }
+        if (mode == SETTINGS_CMD_LAUNCH_MODE_SPLIT_DOWN_VALUE) {
+            Session session = getCurrentSession();
+            if (session !is null) session.addTerminal(Orientation.VERTICAL);
+            threadsAddTimeoutDelegate(250, cast(bool delegate()) {
+                feedActive();
+                return false;
+            });
+            return;
+        }
+        if (mode == SETTINGS_CMD_LAUNCH_MODE_NEW_SESSION_VALUE) {
+            createSession();
+            threadsAddTimeoutDelegate(350, cast(bool delegate()) {
+                feedActive();
+                return false;
+            });
+            return;
+        }
+        feedActive();
+    }
+
+    void runAICommand(string command) {
+        runConfiguredCommand(command, _("AI"));
     }
 
     void openAIResume(AITool tool) {
@@ -566,17 +823,66 @@ private:
                 showErrorDialog(this, _("No resume command configured for this tool"), tool.name);
                 return;
             }
-            runAICommand(cmd);
+            runConfiguredCommand(cmd, tool.name);
         }
     }
 
     void openBookmarksFromHeader() {
+        bool useSearch = true;
+        try { useSearch = gsSettings.getBoolean(SETTINGS_BOOKMARK_HEADER_SEARCH_KEY); } catch (Exception) {}
+        if (useSearch && mbBookmarks !is null) {
+            mbBookmarks.setActive(true);
+            return;
+        }
         ITerminal term = getActiveTerminal();
         if (term is null) {
             showErrorDialog(this, _("No active terminal"), _("Bookmarks"));
             return;
         }
         term.selectBookmark();
+    }
+
+    void loadOpsSessionLayout() {
+        string path = resolveOpsSessionPath(gsSettings);
+        if (!exists(path)) {
+            showErrorDialog(this, format(_("Ops layout not found:\n%s"), path), _("Ops session"));
+            return;
+        }
+        try {
+            loadSession(path);
+        } catch (Exception e) {
+            showErrorDialog(this, e.msg, _("Ops session"));
+        }
+    }
+
+    void copyOutputToSessionLog() {
+        ITerminal term = getActiveTerminal();
+        if (term is null) {
+            showErrorDialog(this, _("No active terminal"), _("Session log"));
+            return;
+        }
+        string dir = resolveSessionLogPath(gsSettings);
+        try {
+            if (!exists(dir)) mkdirRecurse(dir);
+        } catch (Exception e) {
+            showErrorDialog(this, format(_("Cannot create log dir: %s"), e.msg), _("Session log"));
+            return;
+        }
+        import std.datetime : Clock;
+        auto now = Clock.currTime();
+        string stamp = format("%04d%02d%02d_%02d%02d%02d",
+            cast(int)now.year, cast(int)now.month, cast(int)now.day,
+            cast(int)now.hour, cast(int)now.minute, cast(int)now.second);
+        string outPath = buildPath(dir, "tilix-output-" ~ stamp ~ ".txt");
+        try {
+            term.exportScrollbackToFile(outPath);
+            auto info = new MessageDialog(this, GtkDialogFlags.MODAL, MessageType.INFO, ButtonsType.OK,
+                format(_("Saved to:\n%s"), outPath));
+            scope(exit) info.destroy();
+            info.run();
+        } catch (Exception e) {
+            showErrorDialog(this, e.msg, _("Session log"));
+        }
     }
 
     void onCustomTitleChange(string title) {
@@ -667,6 +973,16 @@ private:
             if (mbAI !is null) {
                 mbAI.setActive(true);
             }
+        });
+
+        saQuick = registerActionWithSettings(this, "win", ACTION_WIN_QUICK, gsShortcuts, delegate(GVariant, SimpleAction) {
+            if (mbQuick !is null) {
+                mbQuick.setActive(true);
+            }
+        });
+
+        registerActionWithSettings(this, "win", ACTION_WIN_COPY_SESSION_LOG, gsShortcuts, delegate(GVariant, SimpleAction) {
+            copyOutputToSessionLog();
         });
 
         if (!useTabs) {

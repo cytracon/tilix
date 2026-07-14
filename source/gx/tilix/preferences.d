@@ -95,6 +95,30 @@ enum SETTINGS_OSC52_ENABLED_KEY = "osc52-enabled";
 // AI tools: strv of "name|command|resume_command|list_command"
 enum SETTINGS_AI_TOOLS_KEY = "ai-tools";
 enum SETTINGS_AI_FEED_NEWLINE_KEY = "ai-feed-newline";
+// How to inject commands from AI / bookmarks / quick actions
+enum SETTINGS_CMD_LAUNCH_MODE_KEY = "cmd-launch-mode";
+enum SETTINGS_CMD_LAUNCH_MODE_CURRENT_VALUE = "current";
+enum SETTINGS_CMD_LAUNCH_MODE_SPLIT_RIGHT_VALUE = "split-right";
+enum SETTINGS_CMD_LAUNCH_MODE_SPLIT_DOWN_VALUE = "split-down";
+enum SETTINGS_CMD_LAUNCH_MODE_NEW_SESSION_VALUE = "new-session";
+immutable string[] SETTINGS_CMD_LAUNCH_MODE_VALUES = [
+    SETTINGS_CMD_LAUNCH_MODE_CURRENT_VALUE,
+    SETTINGS_CMD_LAUNCH_MODE_SPLIT_RIGHT_VALUE,
+    SETTINGS_CMD_LAUNCH_MODE_SPLIT_DOWN_VALUE,
+    SETTINGS_CMD_LAUNCH_MODE_NEW_SESSION_VALUE
+];
+enum SETTINGS_AI_UNIFIED_RECENT_KEY = "ai-unified-recent-count";
+enum SETTINGS_BOOKMARK_CONFIRM_DESTRUCTIVE_KEY = "bookmark-confirm-destructive";
+enum SETTINGS_BOOKMARK_HEADER_SEARCH_KEY = "bookmark-header-search";
+enum SETTINGS_SESSION_LOG_PATH_KEY = "session-log-path";
+enum SETTINGS_OPS_SESSION_PATH_KEY = "ops-session-path";
+// Quick actions: name|command|section
+enum SETTINGS_QUICK_ACTIONS_KEY = "quick-actions";
+// Shops: name|command
+enum SETTINGS_SHOPS_KEY = "shops";
+enum SETTINGS_HEADER_SHOW_BOOKMARKS_KEY = "header-show-bookmarks";
+enum SETTINGS_HEADER_SHOW_AI_KEY = "header-show-ai";
+enum SETTINGS_HEADER_SHOW_QUICK_KEY = "header-show-quick";
 enum SETTINGS_WARN_VTE_CONFIG_ISSUE_KEY = "warn-vte-config-issue";
 enum SETTINGS_TERMINAL_FOCUS_FOLLOWS_MOUSE_KEY = "focus-follow-mouse";
 enum SETTINGS_ENCODINGS_KEY = "encodings";

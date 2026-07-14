@@ -370,6 +370,32 @@ AISessionEntry[] listGrokSessionsFromFS(int limit = 40) {
     return entries;
 }
 
+/**
+ * Unified recent sessions from local Grok + Codex (for header menu).
+ */
+AISessionEntry[] listUnifiedRecentSessions(int limit = 15) {
+    AISessionEntry[] all;
+    auto g = listGrokSessionsFromFS(limit * 2);
+    foreach (ref e; g) {
+        if (e.status.length == 0) e.status = "grok";
+        else e.status = "grok/" ~ e.status;
+        e.summary = "[Grok] " ~ e.summary;
+    }
+    auto c = listCodexSessionsFromFS(limit * 2);
+    foreach (ref e; c) {
+        e.status = "codex";
+        e.summary = "[Codex] " ~ e.summary;
+    }
+    all ~= g;
+    all ~= c;
+    // sort by updated string roughly (ISO date) — also keep original order from FS (already mtime sorted)
+    // Interleave by re-sorting if updated looks like ISO date
+    // Simple: take from each list already sorted, merge by updated desc
+    sort!((a, b) => a.updated > b.updated)(all);
+    if (all.length > limit) all = all[0 .. limit];
+    return all;
+}
+
 /** Scan ~/.codex/sessions for recent rollouts. */
 AISessionEntry[] listCodexSessionsFromFS(int limit = 40) {
     AISessionEntry[] entries;

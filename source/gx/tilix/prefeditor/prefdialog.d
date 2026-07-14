@@ -94,6 +94,7 @@ import gx.tilix.preferences;
 import gx.tilix.prefeditor.aieditor;
 import gx.tilix.prefeditor.bookmarkeditor;
 import gx.tilix.prefeditor.common;
+import gx.tilix.prefeditor.cytraconprefs;
 import gx.tilix.prefeditor.profileeditor;
 import gx.tilix.prefeditor.titleeditor;
 
@@ -159,6 +160,10 @@ private:
         AIPreferences aip = new AIPreferences(gsSettings);
         pages.addTitled(aip, N_("AI Tools"), _("AI Tools"));
         addNonProfileRow(new GenericPreferenceRow(N_("AI Tools"), _("AI Tools")));
+
+        CytraconPreferences cyp = new CytraconPreferences(gsSettings);
+        pages.addTitled(cyp, N_("Cytracon"), _("Cytracon"));
+        addNonProfileRow(new GenericPreferenceRow(N_("Cytracon"), _("Cytracon")));
 
         ShortcutPreferences sp = new ShortcutPreferences(gsSettings);
         searchButton.addOnToggled(delegate(ToggleButton button) {

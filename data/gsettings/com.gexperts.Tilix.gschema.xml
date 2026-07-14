@@ -330,6 +330,58 @@
       <summary>Append Enter when injecting AI commands into the terminal</summary>
       <description>When true, commands from the AI menu are executed immediately by appending a newline.</description>
     </key>
+    <key name="cmd-launch-mode" type="s">
+      <default>'current'</default>
+      <summary>Where to run AI/bookmark/quick commands</summary>
+      <description>One of: current, split-right, split-down, new-session. Controls whether commands are fed into the active terminal or launched in a new split/session.</description>
+    </key>
+    <key name="ai-unified-recent-count" type="i">
+      <default>15</default>
+      <summary>Number of unified recent AI sessions to show</summary>
+      <description>How many combined Grok+Codex sessions appear under Recent AI in the header menu (1–50).</description>
+    </key>
+    <key name="bookmark-confirm-destructive" type="b">
+      <default>true</default>
+      <summary>Confirm before running destructive bookmark commands</summary>
+      <description>When true, bookmarks whose command looks destructive (rm, dist-upgrade, flush, restart, …) require confirmation.</description>
+    </key>
+    <key name="bookmark-header-search" type="b">
+      <default>true</default>
+      <summary>Use searchable bookmark popover in the header bar</summary>
+      <description>When true, the header bookmark button opens a filterable list. When false, the classic chooser dialog is used.</description>
+    </key>
+    <key name="session-log-path" type="s">
+      <default>''</default>
+      <summary>Directory for exported terminal output (session logs)</summary>
+      <description>Empty uses ~/.claude/session-logs. Used by “Copy output to session log”.</description>
+    </key>
+    <key name="ops-session-path" type="s">
+      <default>''</default>
+      <summary>Path to ops session layout JSON</summary>
+      <description>Empty uses ~/.config/tilix/sessions/ops-triple.json or the bundled Cytracon layout.</description>
+    </key>
+    <key name="quick-actions" type="as">
+      <default>[]</default>
+      <summary>Quick actions for the header Ops menu</summary>
+      <description>Each entry: name|command|section. Empty uses Cytracon built-in defaults (Server, Cache, Status).</description>
+    </key>
+    <key name="shops" type="as">
+      <default>[]</default>
+      <summary>Shop launcher entries</summary>
+      <description>Each entry: name|command. Empty uses Cytracon Magento shop defaults.</description>
+    </key>
+    <key name="header-show-bookmarks" type="b">
+      <default>true</default>
+      <summary>Show bookmarks button in header bar</summary>
+    </key>
+    <key name="header-show-ai" type="b">
+      <default>true</default>
+      <summary>Show AI menu in header bar</summary>
+    </key>
+    <key name="header-show-quick" type="b">
+      <default>true</default>
+      <summary>Show Ops/Quick menu in header bar</summary>
+    </key>
     <!-- Search Options -->
     <key name="search-default-match-case" type="b">
       <default>false</default>
@@ -1158,6 +1210,14 @@
     <key name="win-ai-menu" type="s">
       <default>'&lt;Ctrl&gt;&lt;Shift&gt;a'</default>
       <summary>Keyboard shortcut to open the AI tools menu</summary>
+    </key>
+    <key name="win-quick-menu" type="s">
+      <default>'&lt;Ctrl&gt;&lt;Shift&gt;q'</default>
+      <summary>Keyboard shortcut to open the Ops/Quick menu</summary>
+    </key>
+    <key name="win-copy-session-log" type="s">
+      <default>'disabled'</default>
+      <summary>Keyboard shortcut to save terminal output to the session log directory</summary>
     </key>
     <!-- Can't use accelerators with tab, may need to hardwire this in VTE -->
     <key name="session-switch-to-next-terminal" type="s">

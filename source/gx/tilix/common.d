@@ -291,6 +291,11 @@ interface ITerminal : IIdentifiable {
     void selectBookmark();
 
     /**
+     * Export scrollback to a file path.
+     */
+    void exportScrollbackToFile(string path);
+
+    /**
      * Returns the current directory of the terminal, may be
      * null if information is not available due to VTE
      * configuration issue

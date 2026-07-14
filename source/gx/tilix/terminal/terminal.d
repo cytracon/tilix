@@ -4072,6 +4072,19 @@ public:
     }
 
     /**
+     * Export full scrollback to a text file (Cytracon session logs).
+     */
+    void exportScrollbackToFile(string path) {
+        import gio.OutputStream : OutputStream;
+        GFileIF file = parseName(path);
+        OutputStream stream = file.replace(null, false, GFileCreateFlags.NONE, null);
+        scope (exit) {
+            stream.close(null);
+        }
+        vte.writeContentsSync(stream, VteWriteFlags.DEFAULT, null);
+    }
+
+    /**
      * Called when the session the terminal is associated with
      * becomes active, i.e. is visible to the user
      *
