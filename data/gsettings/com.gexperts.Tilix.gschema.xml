@@ -319,6 +319,17 @@
       <summary>Allow VTE OSC 52 clipboard (when supported by VTE)</summary>
       <description>VTE 0.76+ implements OSC 52 for remote applications to set the local clipboard. This preference is reserved for policy documentation and future hard controls; keep enabled for SSH editor workflows (nvim, etc.).</description>
     </key>
+    <!-- Cytracon AI tools: name|command|resume_command|list_command (empty = built-in defaults) -->
+    <key name="ai-tools" type="as">
+      <default>[]</default>
+      <summary>Configured AI tools for the header-bar AI menu</summary>
+      <description>Each entry is pipe-separated: name|start_command|resume_command|list_command. Resume command may use {id}. Empty list uses Cytracon built-in defaults (Grok, Codex, server wrappers).</description>
+    </key>
+    <key name="ai-feed-newline" type="b">
+      <default>true</default>
+      <summary>Append Enter when injecting AI commands into the terminal</summary>
+      <description>When true, commands from the AI menu are executed immediately by appending a newline.</description>
+    </key>
     <!-- Search Options -->
     <key name="search-default-match-case" type="b">
       <default>false</default>
@@ -1139,6 +1150,14 @@
     <key name="win-fullscreen" type="s">
       <default>'F11'</default>
       <summary>Keyboard shortcut to toggle fullscreen</summary>
+    </key>
+    <key name="win-bookmarks" type="s">
+      <default>'&lt;Ctrl&gt;&lt;Shift&gt;b'</default>
+      <summary>Keyboard shortcut to open bookmarks from the header bar</summary>
+    </key>
+    <key name="win-ai-menu" type="s">
+      <default>'&lt;Ctrl&gt;&lt;Shift&gt;a'</default>
+      <summary>Keyboard shortcut to open the AI tools menu</summary>
     </key>
     <!-- Can't use accelerators with tab, may need to hardwire this in VTE -->
     <key name="session-switch-to-next-terminal" type="s">

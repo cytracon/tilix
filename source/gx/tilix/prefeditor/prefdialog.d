@@ -91,6 +91,7 @@ import gx.tilix.constants;
 import gx.tilix.encoding;
 import gx.tilix.preferences;
 
+import gx.tilix.prefeditor.aieditor;
 import gx.tilix.prefeditor.bookmarkeditor;
 import gx.tilix.prefeditor.common;
 import gx.tilix.prefeditor.profileeditor;
@@ -154,6 +155,10 @@ private:
         bmEditor = new GlobalBookmarkEditor();
         pages.addTitled(bmEditor, N_("Bookmarks"), _("Bookmarks"));
         addNonProfileRow(new GenericPreferenceRow(N_("Bookmarks"), _("Bookmarks")));
+
+        AIPreferences aip = new AIPreferences(gsSettings);
+        pages.addTitled(aip, N_("AI Tools"), _("AI Tools"));
+        addNonProfileRow(new GenericPreferenceRow(N_("AI Tools"), _("AI Tools")));
 
         ShortcutPreferences sp = new ShortcutPreferences(gsSettings);
         searchButton.addOnToggled(delegate(ToggleButton button) {

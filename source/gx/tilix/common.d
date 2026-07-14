@@ -281,6 +281,16 @@ interface ITerminal : IIdentifiable {
     void focusTerminal();
 
     /**
+     * Feed text to the terminal as if typed (for bookmarks / AI commands).
+     */
+    void feedInput(string text, bool addNewline = true);
+
+    /**
+     * Open the bookmark chooser and insert the selected bookmark.
+     */
+    void selectBookmark();
+
+    /**
      * Returns the current directory of the terminal, may be
      * null if information is not available due to VTE
      * configuration issue

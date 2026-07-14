@@ -775,7 +775,7 @@ private:
 
         // Select Bookmark
         registerActionWithSettings(group, ACTION_PREFIX, ACTION_SELECT_BOOKMARK, gsShortcuts, delegate(GVariant value, SimpleAction sa) {
-            selectBookmark();
+            selectBookmarkImpl();
         }, null, null);
 
         // Scroll Up
@@ -1386,9 +1386,9 @@ private:
 
     /**
      * Select a bookmark and insert it into
-     * terminal.
+     * terminal. (private helper — public interface method is below)
      */
-    void selectBookmark() {
+    void selectBookmarkImpl() {
         BookmarkChooser bc = new BookmarkChooser(cast(Window)getToplevel(), BMSelectionMode.LEAF);
         scope(exit) {bc.destroy();}
         bc.showAll();
@@ -1398,13 +1398,7 @@ private:
                 trace("Add new line");
                 text ~= '\n';
             }
-            vte.feedChild(text);
-            static if (!USE_COMMIT_SYNCHRONIZATION) {
-                if (isSynchronizedInput()) {
-                    SyncInputEvent se = SyncInputEvent(_terminalUUID, SyncInputEventType.INSERT_TEXT, null, text);
-                    onSyncInput.emit(this, se);
-                }
-            }
+            feedInput(text, false); // newline already handled above
             vte.grabFocus();
         }
     }
@@ -4050,6 +4044,31 @@ public:
     void focusTerminal() {
         trace("Terminal grabbing focus");
         vte.grabFocus();
+    }
+
+    /**
+     * Feed text into the terminal as user input (ITerminal).
+     */
+    void feedInput(string text, bool addNewline = true) {
+        if (text.length == 0) return;
+        if (addNewline && !text.endsWith("\n")) {
+            text ~= '\n';
+        }
+        vte.feedChild(text);
+        static if (!USE_COMMIT_SYNCHRONIZATION) {
+            if (isSynchronizedInput()) {
+                SyncInputEvent se = SyncInputEvent(_terminalUUID, SyncInputEventType.INSERT_TEXT, null, text);
+                onSyncInput.emit(this, se);
+            }
+        }
+        vte.grabFocus();
+    }
+
+    /**
+     * Open bookmark chooser and insert selection (ITerminal).
+     */
+    void selectBookmark() {
+        selectBookmarkImpl();
     }
 
     /**

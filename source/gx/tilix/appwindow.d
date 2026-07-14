@@ -76,6 +76,7 @@ import gtk.Overlay;
 import gtk.Popover;
 import gtk.Revealer;
 import gtk.ScrolledWindow;
+import gtk.Separator;
 import gtk.Settings;
 import gtk.Stack;
 import gtk.StyleContext;
@@ -86,6 +87,7 @@ import gtk.Window;
 import gtk.WindowGroup;
 
 import gtkc.glib;
+import gtkc.gtktypes : GtkAlign, ReliefStyle;
 
 import vte.Pty;
 import vte.Terminal;
@@ -97,6 +99,8 @@ import gx.gtk.threads;
 import gx.gtk.util;
 import gx.i18n.l10n;
 
+import gx.tilix.ai.aidialog;
+import gx.tilix.ai.tools;
 import gx.tilix.application;
 import gx.tilix.closedialog;
 import gx.tilix.cmdparams;
@@ -146,6 +150,8 @@ private:
     enum ACTION_WIN_NEXT_SESSION = "switch-to-next-session";
     enum ACTION_WIN_PREVIOUS_SESSION = "switch-to-previous-session";
     enum ACTION_WIN_FULLSCREEN = "fullscreen";
+    enum ACTION_WIN_BOOKMARKS = "bookmarks";
+    enum ACTION_WIN_AI = "ai-menu";
     enum ACTION_SESSION_REORDER_PREVIOUS = "reorder-previous-session";
     enum ACTION_SESSION_REORDER_NEXT = "reorder-next-session";
 
@@ -164,11 +170,15 @@ private:
 
     SimpleActionGroup sessionActions;
     MenuButton mbSessionActions;
+    MenuButton mbAI;
+    Button btnBookmarks;
     SimpleAction saSyncInput;
     SimpleAction saViewSideBar;
     SimpleAction saSessionAddRight;
     SimpleAction saSessionAddDown;
     SimpleAction saSessionAddAuto;
+    SimpleAction saBookmarks;
+    SimpleAction saAI;
 
     Label lblSideBar;
 
@@ -388,6 +398,23 @@ private:
             }
         });
 
+        // Bookmarks (header bar)
+        btnBookmarks = new Button("user-bookmarks-symbolic", IconSize.MENU);
+        btnBookmarks.setTooltipText(_("Bookmarks"));
+        btnBookmarks.setFocusOnClick(false);
+        btnBookmarks.setActionName(getActionDetailedName("win", ACTION_WIN_BOOKMARKS));
+        // Fallback if symbolic icon missing
+        if (btnBookmarks.getImage() is null) {
+            btnBookmarks.setImage(new Image("starred-symbolic", IconSize.MENU));
+        }
+
+        // AI tools menu
+        mbAI = new MenuButton();
+        mbAI.setFocusOnClick(false);
+        mbAI.setTooltipText(_("AI tools and resume"));
+        mbAI.setImage(new Image("system-run-symbolic", IconSize.MENU));
+        mbAI.setPopover(createAIPopover(mbAI));
+
         //Header Bar
         HeaderBar header = new HeaderBar();
         if (!isCSDDisabled()) {
@@ -400,9 +427,156 @@ private:
         }
         header.packStart(btnAddHorizontal);
         header.packStart(btnAddVertical);
+        header.packStart(btnBookmarks);
+        header.packStart(mbAI);
         header.packEnd(mbSessionActions);
         header.packEnd(tbFind);
         return header;
+    }
+
+    /**
+     * Build popover for AI tools: New / Resume last / Resume…
+     */
+    Popover createAIPopover(Widget parent) {
+        Popover pop = new Popover(parent);
+        auto outer = new Box(Orientation.VERTICAL, 0);
+        outer.setMarginTop(6);
+        outer.setMarginBottom(6);
+        outer.setMarginStart(6);
+        outer.setMarginEnd(6);
+
+        void rebuild() {
+            // Clear children
+            auto children = outer.getChildren();
+            if (children !is null) {
+                foreach (w; children.toArray!Widget()) {
+                    outer.remove(w);
+                    w.destroy();
+                }
+            }
+
+            auto tools = loadAITools(gsSettings);
+            if (tools.length == 0) {
+                auto empty = new Label(_("No AI tools configured.\nOpen Preferences → AI Tools."));
+                empty.setMarginTop(8);
+                empty.setMarginBottom(8);
+                outer.add(empty);
+            } else {
+                foreach (tool; tools) {
+                    auto secLbl = new Label(format("<b>%s</b>", tool.name));
+                    secLbl.setUseMarkup(true);
+                    secLbl.setHalign(GtkAlign.START);
+                    secLbl.setMarginTop(6);
+                    secLbl.setMarginBottom(2);
+                    outer.add(secLbl);
+
+                    auto bNew = new Button(format(_("New: %s"), tool.name));
+                    bNew.setHalign(GtkAlign.FILL);
+                    bNew.setRelief(ReliefStyle.NONE);
+                    AITool toolNew = tool;
+                    bNew.addOnClicked(delegate(Button) {
+                        pop.hide();
+                        runAICommand(toolNew.command);
+                    });
+                    outer.add(bNew);
+
+                    if (tool.supportsResume()) {
+                        auto bResume = new Button(format(_("Resume…: %s"), tool.name));
+                        bResume.setHalign(GtkAlign.FILL);
+                        bResume.setRelief(ReliefStyle.NONE);
+                        AITool toolRes = tool;
+                        bResume.addOnClicked(delegate(Button) {
+                            pop.hide();
+                            openAIResume(toolRes);
+                        });
+                        outer.add(bResume);
+
+                        // Quick continue variants when command is plain local CLI
+                        if (tool.command == "grok" || tool.command.endsWith("/grok") || tool.command == "grokai") {
+                            auto bCont = new Button(format(_("Continue last: %s"), tool.name));
+                            bCont.setHalign(GtkAlign.FILL);
+                            bCont.setRelief(ReliefStyle.NONE);
+                            string contCmd = tool.command ~ " -c";
+                            bCont.addOnClicked(delegate(Button) {
+                                pop.hide();
+                                runAICommand(contCmd);
+                            });
+                            outer.add(bCont);
+                        } else if (tool.command == "codex" || tool.command.endsWith("/codex") || tool.command == "codexai") {
+                            auto bLast = new Button(format(_("Resume last: %s"), tool.name));
+                            bLast.setHalign(GtkAlign.FILL);
+                            bLast.setRelief(ReliefStyle.NONE);
+                            string lastCmd = (tool.command == "codexai")
+                                ? `ssh -t -i ~/.ssh/id_cytracon2 root@157.90.81.172 'cd /AI && codex resume --last'`
+                                : "codex resume --last";
+                            bLast.addOnClicked(delegate(Button) {
+                                pop.hide();
+                                runAICommand(lastCmd);
+                            });
+                            outer.add(bLast);
+                        }
+                    }
+                }
+            }
+
+            auto sep = new Separator(Orientation.HORIZONTAL);
+            sep.setMarginTop(8);
+            sep.setMarginBottom(4);
+            outer.add(sep);
+
+            auto bPref = new Button(_("AI Tools preferences…"));
+            bPref.setRelief(ReliefStyle.NONE);
+            bPref.addOnClicked(delegate(Button) {
+                pop.hide();
+                tilix.presentPreferences();
+            });
+            outer.add(bPref);
+
+            outer.showAll();
+        }
+
+        pop.add(outer);
+        pop.addOnShow(delegate(Widget) { rebuild(); });
+        return pop;
+    }
+
+    void runAICommand(string command) {
+        if (command.length == 0) return;
+        ITerminal term = getActiveTerminal();
+        if (term is null) {
+            showErrorDialog(this, _("No active terminal"), _("AI"));
+            return;
+        }
+        bool nl = true;
+        try {
+            nl = gsSettings.getBoolean(SETTINGS_AI_FEED_NEWLINE_KEY);
+        } catch (Exception) {}
+        term.feedInput(command, nl);
+    }
+
+    void openAIResume(AITool tool) {
+        auto dlg = new AIResumeDialog(this, tool);
+        scope (exit) dlg.destroy();
+        dlg.showAll();
+        if (dlg.run() == ResponseType.OK) {
+            string id = dlg.selectedId;
+            if (id.length == 0) return;
+            string cmd = tool.buildResume(id);
+            if (cmd.length == 0) {
+                showErrorDialog(this, _("No resume command configured for this tool"), tool.name);
+                return;
+            }
+            runAICommand(cmd);
+        }
+    }
+
+    void openBookmarksFromHeader() {
+        ITerminal term = getActiveTerminal();
+        if (term is null) {
+            showErrorDialog(this, _("No active terminal"), _("Bookmarks"));
+            return;
+        }
+        term.selectBookmark();
     }
 
     void onCustomTitleChange(string title) {
@@ -484,6 +658,16 @@ private:
                 sa.setState(new GVariant(true));
             }
         }, null, new GVariant(false));
+
+        saBookmarks = registerActionWithSettings(this, "win", ACTION_WIN_BOOKMARKS, gsShortcuts, delegate(GVariant, SimpleAction) {
+            openBookmarksFromHeader();
+        });
+
+        saAI = registerActionWithSettings(this, "win", ACTION_WIN_AI, gsShortcuts, delegate(GVariant, SimpleAction) {
+            if (mbAI !is null) {
+                mbAI.setActive(true);
+            }
+        });
 
         if (!useTabs) {
             saViewSideBar = registerActionWithSettings(this, "win", ACTION_WIN_SIDEBAR, gsShortcuts, delegate(GVariant value, SimpleAction sa) {
