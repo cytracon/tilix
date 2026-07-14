@@ -59,6 +59,7 @@ import gtk.AspectFrame;
 import gtk.Box;
 import gtk.Button;
 import gtk.CheckButton;
+import gtk.Container;
 import gtk.Dialog;
 import gtk.Entry;
 import gtk.EventBox;
@@ -90,7 +91,19 @@ import gtk.Window;
 import gtk.WindowGroup;
 
 import gtkc.glib;
-import gtkc.gtktypes : GtkAlign, ReliefStyle;
+import gtkc.gtktypes : GtkAlign, ReliefStyle, SelectionMode;
+import pango.c.types : PangoEllipsizeMode;
+
+/**
+ * Keeps a D delegate alive for ListBox row activation (GObject setData is not GC-scanned).
+ */
+class ActionHolder {
+    void delegate() cb;
+    this(void delegate() c) { cb = c; }
+    void run() {
+        if (cb !is null) cb();
+    }
+}
 
 import vte.Pty;
 import vte.Terminal;
@@ -188,6 +201,9 @@ private:
     SimpleAction saBookmarks;
     SimpleAction saAI;
     SimpleAction saQuick;
+
+    // Retain ActionHolder instances for popover ListBox rows
+    ActionHolder[] _popoverActions;
 
     Label lblSideBar;
 
@@ -454,207 +470,335 @@ private:
         return header;
     }
 
-    void clearBoxChildren(Box outer) {
-        auto children = outer.getChildren();
-        if (children !is null) {
-            foreach (w; children.toArray!Widget()) {
-                outer.remove(w);
-                w.destroy();
-            }
+    void clearContainer(Container cont) {
+        if (cont is null) return;
+        auto children = cont.getChildren();
+        if (children is null) return;
+        foreach (w; children.toArray!Widget()) {
+            cont.remove(w);
+            w.destroy();
         }
     }
 
-    Button makeMenuBtn(string label, void delegate() onClick) {
-        auto b = new Button(label);
-        b.setHalign(GtkAlign.FILL);
-        b.setRelief(ReliefStyle.NONE);
-        b.addOnClicked(delegate(Button) { onClick(); });
-        return b;
-    }
-
     Label makeSectionLabel(string text) {
-        auto secLbl = new Label(format("<b>%s</b>", text));
+        auto secLbl = new Label(format("<span size='small' weight='bold' foreground='#888'>%s</span>", text));
         secLbl.setUseMarkup(true);
         secLbl.setHalign(GtkAlign.START);
-        secLbl.setMarginTop(6);
-        secLbl.setMarginBottom(2);
+        secLbl.setMarginTop(10);
+        secLbl.setMarginBottom(4);
+        secLbl.setMarginStart(10);
+        secLbl.setMarginEnd(10);
         return secLbl;
     }
 
     /**
-     * Searchable bookmarks popover
+     * Two-line menu row (title + dim subtitle) inside a ListBox.
+     */
+    ListBoxRow makeActionRow(string title, string subtitle, void delegate() onActivate) {
+        auto row = new ListBoxRow();
+        row.setActivatable(true);
+        row.setSelectable(false);
+
+        auto box = new Box(Orientation.VERTICAL, 2);
+        box.setMarginTop(8);
+        box.setMarginBottom(8);
+        box.setMarginStart(12);
+        box.setMarginEnd(12);
+        box.setHexpand(true);
+
+        auto lblTitle = new Label(title);
+        lblTitle.setHalign(GtkAlign.START);
+        lblTitle.setXalign(0.0);
+        lblTitle.setEllipsize(PangoEllipsizeMode.END);
+        lblTitle.setMaxWidthChars(44);
+        box.add(lblTitle);
+
+        if (subtitle.length > 0) {
+            string sub = subtitle;
+            if (sub.length > 72) sub = sub[0 .. 69] ~ "...";
+            sub = sub.replace("&", "&amp;").replace("<", "&lt;");
+            auto lblSub = new Label(format("<span size='small' foreground='#999'>%s</span>", sub));
+            lblSub.setUseMarkup(true);
+            lblSub.setHalign(GtkAlign.START);
+            lblSub.setXalign(0.0);
+            lblSub.setEllipsize(PangoEllipsizeMode.END);
+            lblSub.setMaxWidthChars(50);
+            box.add(lblSub);
+        }
+
+        row.add(box);
+        auto holder = new ActionHolder(onActivate);
+        _popoverActions ~= holder; // keep GC-alive
+        row.setData("cy-action", cast(void*) holder);
+        return row;
+    }
+
+    ListBox makeMenuListBox(Popover pop) {
+        auto lb = new ListBox();
+        lb.setSelectionMode(SelectionMode.NONE);
+        lb.setActivateOnSingleClick(true);
+        lb.setHexpand(true);
+        lb.addOnRowActivated(delegate(ListBoxRow row, ListBox) {
+            auto holder = cast(ActionHolder) row.getData("cy-action");
+            if (holder !is null) {
+                pop.hide();
+                holder.run();
+            }
+        });
+        return lb;
+    }
+
+    void resetPopoverActions() {
+        _popoverActions.length = 0;
+    }
+
+    ScrolledWindow wrapList(ListBox lb, int minH = 200, int maxH = 360) {
+        auto sw = new ScrolledWindow();
+        sw.setPolicy(PolicyType.NEVER, PolicyType.AUTOMATIC);
+        sw.setShadowType(ShadowType.NONE);
+        sw.setMinContentHeight(minH);
+        sw.setMaxContentHeight(maxH);
+        sw.setPropagateNaturalHeight(true);
+        sw.setHexpand(true);
+        sw.setVexpand(true);
+        sw.add(lb);
+        return sw;
+    }
+
+    /**
+     * Searchable bookmarks popover (ListBox UI).
      */
     Popover createBookmarkPopover(Widget parent) {
         Popover pop = new Popover(parent);
-        auto outer = new Box(Orientation.VERTICAL, 6);
-        outer.setMarginTop(8);
-        outer.setMarginBottom(8);
-        outer.setMarginStart(8);
-        outer.setMarginEnd(8);
-        outer.setSizeRequest(360, -1);
+        pop.setModal(true);
+
+        auto outer = new Box(Orientation.VERTICAL, 0);
+        outer.setSizeRequest(400, 420);
+
+        auto header = new Box(Orientation.VERTICAL, 6);
+        header.setMarginTop(10);
+        header.setMarginBottom(6);
+        header.setMarginStart(10);
+        header.setMarginEnd(10);
 
         auto se = new SearchEntry();
-        se.setPlaceholderText(_("Filter bookmarks…"));
-        outer.add(se);
+        se.setPlaceholderText(_("Search bookmarks…"));
+        se.setHexpand(true);
+        header.add(se);
 
-        auto listBox = new Box(Orientation.VERTICAL, 0);
-        auto sw = new ScrolledWindow(listBox);
-        sw.setPolicy(PolicyType.NEVER, PolicyType.AUTOMATIC);
-        sw.setMinContentHeight(280);
-        sw.setMaxContentHeight(400);
-        sw.setShadowType(ShadowType.ETCHED_IN);
+        auto statusLbl = new Label("");
+        statusLbl.setHalign(GtkAlign.START);
+        statusLbl.setMarginStart(2);
+        header.add(statusLbl);
+        outer.add(header);
+
+        auto lb = makeMenuListBox(pop);
+        auto sw = wrapList(lb, 280, 360);
         outer.add(sw);
 
+        auto footer = new Box(Orientation.VERTICAL, 0);
+        footer.setMarginTop(4);
+        footer.setMarginBottom(6);
+        footer.setMarginStart(6);
+        footer.setMarginEnd(6);
+        auto lbFooter = makeMenuListBox(pop);
+        lbFooter.add(makeActionRow(_("Open classic chooser…"), _("Full dialog with folders"), {
+            openClassicBookmarkChooser();
+        }));
+        footer.add(lbFooter);
+        outer.add(footer);
+
         void rebuild(string filter) {
-            clearBoxChildren(listBox);
-            string[] names;
-            string[] cmds;
-            collectBookmarkLeaves(bmMgr.root, "", names, cmds);
-            string f = filter.strip().toLower();
-            int shown = 0;
-            foreach (i, name; names) {
-                if (f.length && name.toLower().indexOf(f) < 0 && cmds[i].toLower().indexOf(f) < 0)
-                    continue;
-                string n = name;
-                string c = cmds[i];
-                auto b = makeMenuBtn(n, {
-                    pop.hide();
-                    runConfiguredCommand(c, n);
-                });
-                b.setTooltipText(c);
-                listBox.add(b);
-                shown++;
-                if (shown >= 80) break;
+            try {
+                resetPopoverActions();
+                clearContainer(lb);
+                string[] names;
+                string[] cmds;
+                if (bmMgr is null || bmMgr.root is null) {
+                    statusLbl.setText(_("Bookmarks not loaded"));
+                    lb.add(makeActionRow(_("No bookmarks"), _("Manager not initialized"), {}));
+                    lb.showAll();
+                    return;
+                }
+                collectBookmarkLeaves(bmMgr.root, "", names, cmds);
+                string f = filter.strip().toLower();
+                int shown = 0;
+                int total = cast(int) names.length;
+                foreach (i, name; names) {
+                    string n = name;
+                    string c = cmds[i];
+                    if (c.length == 0) c = n;
+                    if (f.length) {
+                        if (n.toLower().indexOf(f) < 0 && c.toLower().indexOf(f) < 0) continue;
+                    }
+                    string title = n;
+                    string sub = c;
+                    lb.add(makeActionRow(title, sub, {
+                        runConfiguredCommand(c, n);
+                    }));
+                    shown++;
+                    if (shown >= 100) break;
+                }
+                if (shown == 0) {
+                    lb.add(makeActionRow(_("No matches"), total == 0 ? _("Bookmark file empty or not loaded") : _("Try another filter"), {}));
+                }
+                statusLbl.setMarkup(format("<span size='small' foreground='#888'>%d / %d</span>", shown, total));
+                lb.showAll();
+            } catch (Exception e) {
+                warningf("bookmark popover rebuild failed: %s", e.msg);
+                clearContainer(lb);
+                lb.add(makeActionRow(_("Error loading bookmarks"), e.msg, {}));
+                lb.showAll();
             }
-            if (shown == 0) {
-                listBox.add(new Label(_("No matches")));
-            }
-            listBox.showAll();
         }
 
         se.addOnSearchChanged(delegate(SearchEntry e) { rebuild(e.getText()); });
-        pop.add(outer);
-        pop.addOnShow(delegate(Widget) {
-            se.setText("");
-            rebuild("");
+        // Rebuild every time popover is shown (map is reliable for Popover)
+        pop.addOnMap(delegate(Widget) {
+            rebuild(se.getText());
             se.grabFocus();
         });
+        // Initial fill
+        rebuild("");
 
-        // Classic dialog fallback footer
-        auto bClassic = makeMenuBtn(_("Open classic chooser…"), {
-            pop.hide();
-            openBookmarksFromHeader();
-        });
-        outer.add(bClassic);
+        pop.add(outer);
         return pop;
     }
 
     void collectBookmarkLeaves(FolderBookmark folder, string prefix, ref string[] names, ref string[] cmds) {
         if (folder is null) return;
         foreach (bm; folder) {
+            if (bm is null) continue;
             auto sub = cast(FolderBookmark) bm;
             if (sub !is null) {
-                collectBookmarkLeaves(sub, prefix ~ bm.name ~ " / ", names, cmds);
+                string p = prefix.length ? prefix ~ bm.name ~ " › " : bm.name ~ " › ";
+                collectBookmarkLeaves(sub, p, names, cmds);
             } else {
-                names ~= prefix ~ bm.name;
-                cmds ~= bm.terminalCommand;
+                string title = prefix.length ? prefix ~ bm.name : bm.name;
+                string cmd;
+                try {
+                    cmd = bm.terminalCommand;
+                } catch (Exception e) {
+                    cmd = "";
+                    warningf("bookmark command error for %s: %s", bm.name, e.msg);
+                }
+                names ~= title;
+                cmds ~= cmd;
             }
         }
     }
 
     /**
-     * Build popover for AI tools + unified recent
+     * Build popover for AI tools + unified recent (ListBox UI).
      */
     Popover createAIPopover(Widget parent) {
         Popover pop = new Popover(parent);
+        pop.setModal(true);
+
         auto outer = new Box(Orientation.VERTICAL, 0);
-        outer.setMarginTop(6);
-        outer.setMarginBottom(6);
-        outer.setMarginStart(6);
-        outer.setMarginEnd(6);
-        outer.setSizeRequest(320, -1);
+        outer.setSizeRequest(420, 480);
+
+        auto swOuter = new ScrolledWindow();
+        swOuter.setPolicy(PolicyType.NEVER, PolicyType.AUTOMATIC);
+        swOuter.setMinContentHeight(360);
+        swOuter.setMaxContentHeight(520);
+        swOuter.setPropagateNaturalHeight(true);
+
+        auto content = new Box(Orientation.VERTICAL, 0);
+        content.setMarginTop(4);
+        content.setMarginBottom(8);
+        swOuter.add(content);
+        outer.add(swOuter);
 
         void rebuild() {
-            clearBoxChildren(outer);
+            try {
+                resetPopoverActions();
+                clearContainer(content);
 
-            int recentN = 15;
-            try { recentN = gsSettings.getInt(SETTINGS_AI_UNIFIED_RECENT_KEY); } catch (Exception) {}
-            if (recentN < 1) recentN = 1;
-            if (recentN > 50) recentN = 50;
+                int recentN = 15;
+                try { recentN = gsSettings.getInt(SETTINGS_AI_UNIFIED_RECENT_KEY); } catch (Exception) {}
+                if (recentN < 1) recentN = 1;
+                if (recentN > 50) recentN = 50;
 
-            outer.add(makeSectionLabel(_("Recent AI")));
-            auto recent = listUnifiedRecentSessions(recentN);
-            if (recent.length == 0) {
-                auto empty = new Label(_("No local sessions yet"));
-                empty.setMarginBottom(4);
-                outer.add(empty);
-            } else {
-                auto tools = loadAITools(gsSettings);
-                foreach (s; recent) {
-                    string label = s.summary;
-                    if (label.length > 55) label = label[0 .. 55] ~ "…";
-                    string id = s.id;
-                    string status = s.status;
-                    auto b = makeMenuBtn(label, {
-                        pop.hide();
-                        resumeUnifiedSession(id, status);
-                    });
-                    b.setTooltipText(s.id ~ " · " ~ s.updated);
-                    outer.add(b);
-                }
-            }
-
-            auto tools = loadAITools(gsSettings);
-            if (tools.length == 0) {
-                outer.add(new Label(_("No AI tools configured.\nPreferences → AI Tools.")));
-            } else {
-                foreach (tool; tools) {
-                    outer.add(makeSectionLabel(tool.name));
-                    AITool toolNew = tool;
-                    outer.add(makeMenuBtn(format(_("New: %s"), tool.name), {
-                        pop.hide();
-                        runConfiguredCommand(toolNew.command, toolNew.name);
-                    }));
-                    if (tool.supportsResume()) {
-                        AITool toolRes = tool;
-                        outer.add(makeMenuBtn(format(_("Resume…: %s"), tool.name), {
-                            pop.hide();
-                            openAIResume(toolRes);
+                // --- Recent ---
+                content.add(makeSectionLabel(_("RECENT SESSIONS")));
+                auto recent = listUnifiedRecentSessions(recentN);
+                auto lbRecent = makeMenuListBox(pop);
+                if (recent.length == 0) {
+                    lbRecent.add(makeActionRow(_("No sessions found"), _("Start Grok/Codex first, or check Preferences → AI Tools"), {}));
+                } else {
+                    foreach (s; recent) {
+                        string title = s.summary;
+                        if (title.startsWith("[Grok] ")) title = "Grok · " ~ title[7 .. $];
+                        else if (title.startsWith("[Codex] ")) title = "Codex · " ~ title[8 .. $];
+                        if (title.length > 60) title = title[0 .. 57] ~ "...";
+                        string sub = s.updated;
+                        if (s.status.length) sub ~= " · " ~ s.status;
+                        string id = s.id;
+                        string status = s.status;
+                        lbRecent.add(makeActionRow(title, sub, {
+                            resumeUnifiedSession(id, status);
                         }));
-                        string cmdLow = tool.command.toLower();
-                        if (cmdLow.endsWith("grok") || cmdLow.canFind("/grok") || cmdLow == "grokai") {
-                            string contCmd = tool.command ~ " -c";
-                            outer.add(makeMenuBtn(format(_("Continue last: %s"), tool.name), {
-                                pop.hide();
-                                runConfiguredCommand(contCmd, tool.name);
+                    }
+                }
+                content.add(lbRecent);
+
+                // --- Tools ---
+                auto tools = loadAITools(gsSettings);
+                content.add(makeSectionLabel(_("TOOLS")));
+                auto lbTools = makeMenuListBox(pop);
+                if (tools.length == 0) {
+                    lbTools.add(makeActionRow(_("No tools configured"), _("Preferences → AI Tools"), {
+                        tilix.presentPreferences();
+                    }));
+                } else {
+                    foreach (tool; tools) {
+                        AITool t = tool;
+                        lbTools.add(makeActionRow(format(_("New session — %s"), t.name), t.command, {
+                            runConfiguredCommand(t.command, t.name);
+                        }));
+                        if (t.supportsResume()) {
+                            lbTools.add(makeActionRow(format(_("Browse sessions — %s"), t.name), _("Pick a session to resume"), {
+                                openAIResume(t);
                             }));
-                        } else if (cmdLow.endsWith("codex") || cmdLow.canFind("/codex") || cmdLow == "codexai") {
-                            string lastCmd = tool.isRemote()
-                                ? `ssh -o BatchMode=yes -i ~/.ssh/id_cytracon2 root@157.90.81.172 -t 'cd /AI && codex resume --last'`
-                                : (tool.command ~ " resume --last");
-                            if (!tool.isRemote() && !tool.command.canFind("resume")) {
-                                // command is path to codex binary
-                                lastCmd = tool.command ~ " resume --last";
+                            string cmdLow = t.command.toLower();
+                            if (cmdLow.endsWith("grok") || cmdLow.canFind("/grok") || cmdLow.canFind("grokai")) {
+                                string contCmd = t.command ~ " -c";
+                                lbTools.add(makeActionRow(format(_("Continue last — %s"), t.name), contCmd, {
+                                    runConfiguredCommand(contCmd, t.name);
+                                }));
+                            } else if (cmdLow.endsWith("codex") || cmdLow.canFind("/codex") || cmdLow.canFind("codexai")) {
+                                string lastCmd = t.isRemote()
+                                    ? `ssh -o BatchMode=yes -i ~/.ssh/id_cytracon2 root@157.90.81.172 -t 'cd /AI && codex resume --last'`
+                                    : (t.command ~ " resume --last");
+                                lbTools.add(makeActionRow(format(_("Resume last — %s"), t.name), lastCmd, {
+                                    runConfiguredCommand(lastCmd, t.name);
+                                }));
                             }
-                            outer.add(makeMenuBtn(format(_("Resume last: %s"), tool.name), {
-                                pop.hide();
-                                runConfiguredCommand(lastCmd, tool.name);
-                            }));
                         }
                     }
                 }
-            }
+                content.add(lbTools);
 
-            outer.add(new Separator(Orientation.HORIZONTAL));
-            outer.add(makeMenuBtn(_("AI Tools preferences…"), {
-                pop.hide();
-                tilix.presentPreferences();
-            }));
-            outer.showAll();
+                content.add(makeSectionLabel(_("SETTINGS")));
+                auto lbSet = makeMenuListBox(pop);
+                lbSet.add(makeActionRow(_("AI Tools preferences…"), _("Edit commands and list tools"), {
+                    tilix.presentPreferences();
+                }));
+                content.add(lbSet);
+
+                content.showAll();
+            } catch (Exception e) {
+                warningf("AI popover rebuild failed: %s", e.msg);
+                clearContainer(content);
+                content.add(new Label(format(_("AI menu error: %s"), e.msg)));
+                content.showAll();
+            }
         }
 
+        pop.addOnMap(delegate(Widget) { rebuild(); });
+        rebuild();
         pop.add(outer);
-        pop.addOnShow(delegate(Widget) { rebuild(); });
         return pop;
     }
 
@@ -686,66 +830,97 @@ private:
      */
     Popover createQuickPopover(Widget parent) {
         Popover pop = new Popover(parent);
+        pop.setModal(true);
+
         auto outer = new Box(Orientation.VERTICAL, 0);
-        outer.setMarginTop(6);
-        outer.setMarginBottom(6);
-        outer.setMarginStart(6);
-        outer.setMarginEnd(6);
-        outer.setSizeRequest(340, -1);
+        outer.setSizeRequest(400, 460);
+
+        auto sw = new ScrolledWindow();
+        sw.setPolicy(PolicyType.NEVER, PolicyType.AUTOMATIC);
+        sw.setMinContentHeight(340);
+        sw.setMaxContentHeight(500);
+        sw.setPropagateNaturalHeight(true);
+
+        auto content = new Box(Orientation.VERTICAL, 0);
+        content.setMarginBottom(8);
+        sw.add(content);
+        outer.add(sw);
 
         void rebuild() {
-            clearBoxChildren(outer);
+            try {
+                resetPopoverActions();
+                clearContainer(content);
 
-            // Shops
-            outer.add(makeSectionLabel(_("Shops")));
-            auto shops = loadShops(gsSettings);
-            foreach (s; shops) {
-                string n = s.name;
-                string c = s.command;
-                outer.add(makeMenuBtn(n, {
-                    pop.hide();
-                    runConfiguredCommand(c, n);
-                }));
-            }
-
-            // Quick actions by section
-            auto actions = loadQuickActions(gsSettings);
-            string[] sections;
-            foreach (a; actions) {
-                if (!sections.canFind(a.section)) sections ~= a.section;
-            }
-            foreach (sec; sections) {
-                outer.add(makeSectionLabel(sec));
-                foreach (a; actions) {
-                    if (a.section != sec) continue;
-                    string n = a.name;
-                    string c = a.command;
-                    outer.add(makeMenuBtn(n, {
-                        pop.hide();
-                        runConfiguredCommand(c, n);
-                    }));
+                content.add(makeSectionLabel(_("SHOPS")));
+                auto lbShops = makeMenuListBox(pop);
+                auto shops = loadShops(gsSettings);
+                if (shops.length == 0) {
+                    lbShops.add(makeActionRow(_("No shops"), _("Preferences → Cytracon"), {}));
+                } else {
+                    foreach (s; shops) {
+                        string n = s.name;
+                        string c = s.command;
+                        lbShops.add(makeActionRow(n, c, {
+                            runConfiguredCommand(c, n);
+                        }));
+                    }
                 }
-            }
+                content.add(lbShops);
 
-            outer.add(new Separator(Orientation.HORIZONTAL));
-            outer.add(makeMenuBtn(_("Load ops session layout"), {
-                pop.hide();
-                loadOpsSessionLayout();
-            }));
-            outer.add(makeMenuBtn(_("Copy terminal output → session log"), {
-                pop.hide();
-                copyOutputToSessionLog();
-            }));
-            outer.add(makeMenuBtn(_("Cytracon preferences…"), {
-                pop.hide();
-                tilix.presentPreferences();
-            }));
-            outer.showAll();
+                auto actions = loadQuickActions(gsSettings);
+                string[] sections;
+                foreach (a; actions) {
+                    if (!sections.canFind(a.section)) sections ~= a.section;
+                }
+                foreach (sec; sections) {
+                    content.add(makeSectionLabel(sec.toUpper()));
+                    auto lb = makeMenuListBox(pop);
+                    foreach (a; actions) {
+                        if (a.section != sec) continue;
+                        string n = a.name;
+                        string c = a.command;
+                        lb.add(makeActionRow(n, c, {
+                            runConfiguredCommand(c, n);
+                        }));
+                    }
+                    content.add(lb);
+                }
+
+                content.add(makeSectionLabel(_("UTILITIES")));
+                auto lbU = makeMenuListBox(pop);
+                lbU.add(makeActionRow(_("Load ops session layout"), resolveOpsSessionPath(gsSettings), {
+                    loadOpsSessionLayout();
+                }));
+                lbU.add(makeActionRow(_("Copy terminal output → session log"), resolveSessionLogPath(gsSettings), {
+                    copyOutputToSessionLog();
+                }));
+                lbU.add(makeActionRow(_("Cytracon preferences…"), _("Shops, launch mode, quick actions"), {
+                    tilix.presentPreferences();
+                }));
+                content.add(lbU);
+
+                content.showAll();
+            } catch (Exception e) {
+                warningf("quick popover rebuild failed: %s", e.msg);
+                clearContainer(content);
+                content.add(new Label(e.msg));
+                content.showAll();
+            }
         }
 
+        pop.addOnMap(delegate(Widget) { rebuild(); });
+        rebuild();
         pop.add(outer);
-        pop.addOnShow(delegate(Widget) { rebuild(); });
         return pop;
+    }
+
+    void openClassicBookmarkChooser() {
+        ITerminal term = getActiveTerminal();
+        if (term is null) {
+            showErrorDialog(this, _("No active terminal"), _("Bookmarks"));
+            return;
+        }
+        term.selectBookmark();
     }
 
     /**
@@ -830,16 +1005,15 @@ private:
     void openBookmarksFromHeader() {
         bool useSearch = true;
         try { useSearch = gsSettings.getBoolean(SETTINGS_BOOKMARK_HEADER_SEARCH_KEY); } catch (Exception) {}
-        if (useSearch && mbBookmarks !is null) {
+        if (!useSearch) {
+            openClassicBookmarkChooser();
+            return;
+        }
+        if (mbBookmarks !is null) {
             mbBookmarks.setActive(true);
             return;
         }
-        ITerminal term = getActiveTerminal();
-        if (term is null) {
-            showErrorDialog(this, _("No active terminal"), _("Bookmarks"));
-            return;
-        }
-        term.selectBookmark();
+        openClassicBookmarkChooser();
     }
 
     void loadOpsSessionLayout() {
