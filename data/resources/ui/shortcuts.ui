@@ -516,6 +516,12 @@
               </object>
             </child>
             <child>
+              <object class="GtkShortcutsShortcut" id ="terminal-copy-output">
+                <property name="visible">1</property>
+                <property name="title" translatable="yes" context="shortcut window">Copy terminal output to clipboard</property>
+              </object>
+            </child>
+            <child>
               <object class="GtkShortcutsShortcut" id ="terminal-close">
                 <property name="visible">1</property>
                 <property name="title" translatable="yes" context="shortcut window">Close terminal</property>

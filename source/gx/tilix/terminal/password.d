@@ -137,7 +137,7 @@ private:
         TreeViewColumn column = new TreeViewColumn(_("Name"), new CellRendererText(), "text", COLUMN_NAME);
         column.setMinWidth(300);
         tv.appendColumn(column);
-        column = new TreeViewColumn(_("ID"), new CellRendererText(), "text", COLUMN_NAME);
+        column = new TreeViewColumn(_("ID"), new CellRendererText(), "text", COLUMN_ID);
         column.setVisible(false);
         tv.appendColumn(column);
 

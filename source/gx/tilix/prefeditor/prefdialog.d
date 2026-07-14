@@ -1628,6 +1628,26 @@ private:
         CheckButton cbCopyOnSelect = new CheckButton(_("Automatically copy text to clipboard when selecting"));
         bh.bind(SETTINGS_COPY_ON_SELECT_KEY, cbCopyOnSelect, "active", GSettingsBindFlags.DEFAULT);
         add(cbCopyOnSelect);
+
+        // Cytracon: OSC 52 note (handled by VTE 0.76+)
+        CheckButton cbOsc52 = new CheckButton(_("Allow OSC 52 clipboard from remote apps (VTE)"));
+        bh.bind(SETTINGS_OSC52_ENABLED_KEY, cbOsc52, "active", GSettingsBindFlags.DEFAULT);
+        add(cbOsc52);
+
+        // *********** Security Options (Cytracon)
+        Label lblSecurity = new Label(format("<b>%s</b>", _("Security")));
+        lblSecurity.setUseMarkup(true);
+        lblSecurity.setHalign(GtkAlign.START);
+        lblSecurity.setMarginTop(12);
+        add(lblSecurity);
+
+        CheckButton cbTriggerConfirm = new CheckButton(_("Confirm shell commands from triggers and custom links"));
+        bh.bind(SETTINGS_TRIGGER_CONFIRM_SHELL_KEY, cbTriggerConfirm, "active", GSettingsBindFlags.DEFAULT);
+        add(cbTriggerConfirm);
+
+        CheckButton cbWarnPwdRemote = new CheckButton(_("Warn before inserting passwords into remote sessions"));
+        bh.bind(SETTINGS_WARN_PASSWORD_REMOTE_KEY, cbWarnPwdRemote, "active", GSettingsBindFlags.DEFAULT);
+        add(cbWarnPwdRemote);
     }
 
 public:

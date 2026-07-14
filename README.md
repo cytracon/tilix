@@ -1,13 +1,23 @@
 ![Build Status](https://github.com/gnunn1/tilix/workflows/Build%20Test/badge.svg)
 [![Translation status](https://hosted.weblate.org/widgets/tilix/-/svg-badge.svg)](https://hosted.weblate.org/engage/tilix/?utm_source=widget)
-# Tilix
-A tiling terminal emulator for Linux using GTK+ 3. The Tilix web site for users is available at [https://gnunn1.github.io/tilix-web](https://gnunn1.github.io/tilix-web).
+# Tilix (Cytracon Fork)
 
-> :warning: **Maintainers Wanted**<br/>
-> This project is looking for maintainers!
-> At the moment, only very minimal maintenance is done, no new features will be implemented and pull-requests may be reviewed very slowly.
->
-> If you are interested in giving Tilix some :heart:, [please chime in](https://github.com/gnunn1/tilix/issues/1700)!
+**Fork:** https://github.com/cytracon/tilix · **Upstream:** https://github.com/gnunn1/tilix
+
+A tiling terminal emulator for Linux using GTK+ 3. This Cytracon fork adds security hardening, crash fixes, and ops-oriented features while tracking upstream where useful.
+
+### Cytracon additions (1.9.8-cytracon.1)
+
+* OSC 7 crash fix, safer paste heuristics, trigger/custom-link shell confirmation
+* Password insert never syncs to other panes; remote password warning
+* Copy full terminal output to clipboard (`Ctrl+Shift+O`)
+* Nautilus open-tilix hardening
+* Bookmark + session packs: `data/cytracon/` · install: `./scripts/install-cytracon-packs.sh`
+* Docs: [Audit](docs/CYTRACON-AUDIT-2026-07-14.md) · [Changelog](docs/CYTRACON-CHANGELOG.md)
+
+Original project site: [https://gnunn1.github.io/tilix-web](https://gnunn1.github.io/tilix-web).
+
+> Upstream is seeking maintainers ([#1700](https://github.com/gnunn1/tilix/issues/1700)). This fork is actively maintained for Cytracon use.
 
 ###### Screenshot
 ![Screenshot](https://gnunn1.github.io/tilix-web/assets/images/gallery/tilix-screenshot-1.png)

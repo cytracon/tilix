@@ -1,0 +1,27 @@
+# Cytracon Tilix Changelog
+
+## 1.9.8-cytracon.1 — 2026-07-14
+
+### Security
+- Catch invalid OSC 7 / directory URIs (`filenameFromUri`) — prevents process-wide segfault (upstream #2244)
+- Catch invalid dropped URIs in drag-and-drop
+- Expand unsafe-paste heuristics (`doas`, `pkexec`, pipe-to-shell, `rm -rf /`, etc.)
+- Confirm shell execution from triggers and custom hyperlinks (default **on**)
+- Do **not** sync inserted passwords to synchronized-input peers
+- Optional warning before inserting passwords into remote sessions (default **on**)
+- Fix `replaceMatchTokens` `$1`/`$10` order bug
+- Harden Nautilus `open-tilix.py` remote SSH command construction (quote + host/user validation)
+- Flatpak host env: preserve values containing `=`
+
+### Bug fixes
+- Password manager TreeView ID column bound wrong field (`COLUMN_ID`)
+
+### Features
+- **Copy Output to Clipboard** (`Ctrl+Shift+O`) — full scrollback for incident notes
+- Preferences: Security section (trigger confirm, remote password warn, OSC 52 policy flag)
+- Cytracon bookmark pack + ops session layout (`data/cytracon/`, `scripts/install-cytracon-packs.sh`)
+- Document OSC 52: provided by VTE ≥ 0.76 (this workstation: VTE 0.84)
+
+### Packaging / identity
+- Version: `1.9.8-cytracon.1`
+- Fork: https://github.com/cytracon/tilix

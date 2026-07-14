@@ -303,6 +303,22 @@
       <summary>Automatically copy selected text to clipboard</summary>
       <description>If true, when text is selected in the terminal it is automatically copied to the clipboard.</description>
     </key>
+    <!-- Cytracon hardening -->
+    <key name="trigger-confirm-shell" type="b">
+      <default>true</default>
+      <summary>Confirm before running shell commands from triggers or custom links</summary>
+      <description>When true, EXECUTE_COMMAND / RUN_PROCESS triggers and custom hyperlink commands require user confirmation before spawning a shell. Reduces risk of untrusted terminal output driving command execution.</description>
+    </key>
+    <key name="warn-password-on-remote" type="b">
+      <default>true</default>
+      <summary>Warn before inserting a password into a remote session</summary>
+      <description>When true, inserting a password while the terminal appears to be on a remote host shows a confirmation dialog. Passwords are never synchronized to other panes.</description>
+    </key>
+    <key name="osc52-enabled" type="b">
+      <default>true</default>
+      <summary>Allow VTE OSC 52 clipboard (when supported by VTE)</summary>
+      <description>VTE 0.76+ implements OSC 52 for remote applications to set the local clipboard. This preference is reserved for policy documentation and future hard controls; keep enabled for SSH editor workflows (nvim, etc.).</description>
+    </key>
     <!-- Search Options -->
     <key name="search-default-match-case" type="b">
       <default>false</default>
@@ -1216,6 +1232,10 @@
     <key name="terminal-save" type="s">
       <default>'disabled'</default>
       <summary>Keyboard shortcut to save terminal contents</summary>
+    </key>
+    <key name="terminal-copy-output" type="s">
+      <default>'&lt;Ctrl&gt;&lt;Shift&gt;o'</default>
+      <summary>Keyboard shortcut to copy full terminal scrollback to the clipboard</summary>
     </key>
     <key name="terminal-insert-number" type="s">
       <default>'disabled'</default>

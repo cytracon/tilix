@@ -1,0 +1,76 @@
+{
+    "type": "FOLDER",
+    "name": "Root",
+    "list": [
+        {
+            "type": "FOLDER",
+            "name": "Cytracon",
+            "list": [
+                {
+                    "type": "REMOTE",
+                    "name": "Cytracon VPS (root)",
+                    "host": "157.90.81.172",
+                    "port": 22,
+                    "user": "root",
+                    "params": "-i ~/.ssh/id_cytracon2",
+                    "protocolType": "SSH",
+                    "command": ""
+                },
+                {
+                    "type": "PATH",
+                    "name": "Session Logs",
+                    "path": "~/.claude/session-logs",
+                    "command": ""
+                },
+                {
+                    "type": "PATH",
+                    "name": "Backups Today",
+                    "path": "~/backups",
+                    "command": ""
+                },
+                {
+                    "type": "PATH",
+                    "name": "Tilix Fork Source",
+                    "path": "~/src/tilix",
+                    "command": ""
+                },
+                {
+                    "type": "COMMAND",
+                    "name": "All Shops Quick Check",
+                    "command": "echo 'Run shop-check skill / all-shops from AI tooling'"
+                },
+                {
+                    "type": "COMMAND",
+                    "name": "Fail2ban Status",
+                    "command": "ssh -i ~/.ssh/id_cytracon2 root@157.90.81.172 'fail2ban-client status'"
+                },
+                {
+                    "type": "COMMAND",
+                    "name": "MariaDB Slow Queries (24h hint)",
+                    "command": "ssh -i ~/.ssh/id_cytracon2 root@157.90.81.172 'ls -la /var/log/mysql/ 2>/dev/null; journalctl -u mariadb --since \"24 hours ago\" -n 20 --no-pager'"
+                }
+            ]
+        },
+        {
+            "type": "FOLDER",
+            "name": "Magento Shops",
+            "list": [
+                {
+                    "type": "COMMAND",
+                    "name": "Platinum Hyvä (web436)",
+                    "command": "ssh -i ~/.ssh/id_cytracon2 root@157.90.81.172 'cd /var/www/clients/client4/web436/web && sudo -u web436 bash'"
+                },
+                {
+                    "type": "COMMAND",
+                    "name": "Platinum Staging (web384)",
+                    "command": "ssh -i ~/.ssh/id_cytracon2 root@157.90.81.172 'cd /var/www/clients/client4/web384/web && sudo -u web384 bash'"
+                },
+                {
+                    "type": "COMMAND",
+                    "name": "Platinum Prod (web55)",
+                    "command": "ssh -i ~/.ssh/id_cytracon2 root@157.90.81.172 'cd /var/www/clients/client4/web55/web && sudo -u web55 bash'"
+                }
+            ]
+        }
+    ]
+}

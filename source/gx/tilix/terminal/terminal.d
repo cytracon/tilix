@@ -717,13 +717,16 @@ private:
                 pdm.showAll();
                 if (pdm.run() == ResponseType.APPLY) {
                     string password = pdm.password;
-                    vte.feedChild(password);
-                    static if (!USE_COMMIT_SYNCHRONIZATION) {
-                        if (isSynchronizedInput()) {
-                            SyncInputEvent se = SyncInputEvent(_terminalUUID, SyncInputEventType.INSERT_TEXT, null, password);
-                            onSyncInput.emit(this, se);
+                    // Never broadcast secrets to synchronized input peers
+                    if (gsSettings.getBoolean(SETTINGS_WARN_PASSWORD_REMOTE_KEY) && gst.hasState(TerminalStateType.REMOTE)) {
+                        MessageDialog warn = new MessageDialog(cast(Window) getToplevel(), GtkDialogFlags.MODAL, MessageType.WARNING, ButtonsType.OK_CANCEL,
+                            _("You are about to insert a password into a remote session. Continue?"));
+                        scope(exit) { warn.destroy(); }
+                        if (warn.run() != ResponseType.OK) {
+                            return;
                         }
                     }
+                    vte.feedChild(password);
                 }
             } else {
                 showErrorDialog(cast(Window)getToplevel(), format(_("The library %s could not be loaded, password functionality is unavailable."), LIBRARY_SECRET), _("Library Not Loaded"));
@@ -732,6 +735,11 @@ private:
 
         //SaveAs
         registerActionWithSettings(group, ACTION_PREFIX, ACTION_SAVE, gsShortcuts, delegate(GVariant state, SimpleAction sa) { saveTerminalOutput(); }, null, null);
+
+        // Copy full scrollback to clipboard (ops / incident notes)
+        registerActionWithSettings(group, ACTION_PREFIX, ACTION_COPY_OUTPUT, gsShortcuts, delegate(GVariant state, SimpleAction sa) {
+            copyTerminalOutputToClipboard();
+        }, null, null);
 
         //Edit Profile Preference
         registerActionWithSettings(group, ACTION_PREFIX, ACTION_PROFILE_PREFERENCE, gsShortcuts, delegate(GVariant, SimpleAction) {
@@ -850,6 +858,7 @@ private:
 
         menuSection = new GMenu();
         menuSection.append(_("Save Output…"), getActionDetailedName(ACTION_PREFIX, ACTION_SAVE));
+        menuSection.append(_("Copy Output to Clipboard"), getActionDetailedName(ACTION_PREFIX, ACTION_COPY_OUTPUT));
         menuSection.append(_("Reset"), getActionDetailedName(ACTION_PREFIX, ACTION_RESET));
         menuSection.append(_("Reset and Clear"), getActionDetailedName(ACTION_PREFIX, ACTION_RESET_AND_CLEAR));
         submenu.appendSection(null, menuSection);
@@ -1427,11 +1436,61 @@ private:
     }
 
     /**
-     * Tests if the paste is unsafe, currently just looks for sudo and
-     * carriage return.
+     * Tests if the paste is potentially unsafe (privilege escalation,
+     * pipe-to-shell, destructive commands). Used for the paste warning dialog.
      */
     bool isPasteUnsafe(string text) {
-        return (text.indexOf("sudo") > -1) && (text.indexOf("\n") > -1);
+        if (text.length == 0) {
+            return false;
+        }
+        immutable string lower = toLower(text);
+        immutable bool multiLine = (text.indexOf('\n') >= 0) || (text.indexOf('\r') >= 0);
+
+        // Always treat these as unsafe (even single-line)
+        static immutable string[] alwaysDangerous = [
+            "rm -rf /", "rm -rf/*", "mkfs.", "dd if=", "> /dev/sd", "> /dev/nvme",
+            ":(){ :|:& };:", "| bash", "|bash", "| sh", "|sh", "| zsh", "|zsh",
+            "| fish", "|fish", "curl |", "wget |", "curl|", "wget|",
+            "base64 -d", "base64 --decode", "chmod -R 777 /", "chown -R "
+        ];
+        foreach (p; alwaysDangerous) {
+            if (lower.indexOf(p) >= 0) {
+                return true;
+            }
+        }
+
+        // Privilege escalation — warn even without newline
+        static immutable string[] privilege = [
+            "sudo ", "sudo\t", "doas ", "pkexec ", "su -c ", "su root", "sudo\n", "sudo\r"
+        ];
+        foreach (p; privilege) {
+            if (lower.indexOf(p) >= 0) {
+                return true;
+            }
+        }
+
+        // Legacy / broad: multi-line containing sudo anywhere
+        if (multiLine && lower.indexOf("sudo") >= 0) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Confirm before running shell commands from triggers/custom links.
+     */
+    bool confirmTriggerShellAction(string command) {
+        if (!gsSettings.getBoolean(SETTINGS_TRIGGER_CONFIRM_SHELL_KEY)) {
+            return true;
+        }
+        MessageDialog dialog = new MessageDialog(cast(Window) getToplevel(), GtkDialogFlags.MODAL + GtkDialogFlags.USE_HEADER_BAR,
+            MessageType.WARNING, ButtonsType.OK_CANCEL,
+            format(_("A terminal trigger/custom link wants to run a shell command:\n\n%s\n\nAllow this command?"), command));
+        scope (exit) {
+            dialog.destroy();
+        }
+        dialog.setDefaultResponse(ResponseType.CANCEL);
+        return dialog.run() == ResponseType.OK;
     }
 
     void advancedPaste(GdkAtom source) {
@@ -1700,9 +1759,15 @@ private:
                     checkAutomaticProfileSwitch();
                 }
                 break;
-            case TriggerAction.EXECUTE_COMMAND:
-                spawnShell(replaceMatchTokens(trigger.parameters, groups));
+            case TriggerAction.EXECUTE_COMMAND: {
+                string cmd = replaceMatchTokens(trigger.parameters, groups);
+                if (!confirmTriggerShellAction(cmd)) {
+                    warningf("Trigger EXECUTE_COMMAND blocked by user confirmation: %s", cmd);
+                    break;
+                }
+                spawnShell(cmd);
                 break;
+            }
             case TriggerAction.SEND_NOTIFICATION:
                 string[string] parameters = getParameters(trigger.parameters);
                 tracef("Parameters count: %d", parameters.length);
@@ -1739,11 +1804,16 @@ private:
                     sa.activate(null);
                 }
                 break;
-            case TriggerAction.RUN_PROCESS:
+            case TriggerAction.RUN_PROCESS: {
                 string process = replaceMatchTokens(trigger.parameters, groups);
+                if (!confirmTriggerShellAction(process)) {
+                    warningf("Trigger RUN_PROCESS blocked by user confirmation: %s", process);
+                    break;
+                }
                 auto response = executeShell(process);
                 vte.feedChild(response.output);
                 break;
+            }
         }
     }
 
@@ -2051,6 +2121,10 @@ private:
                             string command = replaceMatchTokens(tr.command, groups);
                             command = replaceVariables(command);
                             trace("Command: " ~ command);
+                            if (!confirmTriggerShellAction(command)) {
+                                warningf("Custom hyperlink command blocked by user confirmation: %s", command);
+                                return;
+                            }
                             string[string] env;
                             spawnShell(command, env, Config.none, currentLocalDirectory);
                         }
@@ -2647,6 +2721,8 @@ private:
     }
 
     void getHostnameAndDirectory(out string hostname, out string directory) {
+        hostname = null;
+        directory = null;
         if (gpid <= 0)
             return;
         string cwd = vte.getCurrentDirectoryUri();
@@ -2654,7 +2730,14 @@ private:
             return;
         }
         trace("Current directory: " ~ cwd);
-        directory = URI.filenameFromUri(cwd, hostname);
+        // Invalid OSC 7 sequences must not crash the process (upstream #2244 / Cytracon S1)
+        try {
+            directory = URI.filenameFromUri(cwd, hostname);
+        } catch (Exception e) {
+            warningf("Ignoring invalid current-directory URI '%s': %s", cwd, e.msg);
+            hostname = null;
+            directory = null;
+        }
     }
 
     /**
@@ -2906,12 +2989,16 @@ private:
         }
         GVariantBuilder envBuilder = new GVariantBuilder(new GVariantType("a{ss}"));
         foreach(env; envv) {
-            string[] envPair = env.split("=");
-            tracef("Adding env var %s=%s", envPair[0], envPair[1]);
-            if (envPair.length ==2) {
-                GVariant pair = new GVariant(new GVariant(envPair[0]), new GVariant(envPair[1]));
-                envBuilder.addValue(pair);
+            // Split only on first '=' so values may contain '='
+            auto eq = env.indexOf('=');
+            if (eq <= 0) {
+                continue;
             }
+            string key = env[0 .. eq];
+            string val = env[eq + 1 .. $];
+            tracef("Adding env var %s=%s", key, val);
+            GVariant pair = new GVariant(new GVariant(key), new GVariant(val));
+            envBuilder.addValue(pair);
         }
 
         import gtkc.glib: g_variant_new;
@@ -3410,7 +3497,15 @@ private:
                         trace("Converted filename " ~ filename);
                     } else {
                         string hostname;
-                        filename = URI.filenameFromUri(uri, hostname);
+                        try {
+                            filename = URI.filenameFromUri(uri, hostname);
+                        } catch (Exception e) {
+                            warningf("Ignoring invalid dropped URI '%s': %s", uri, e.msg);
+                            continue;
+                        }
+                    }
+                    if (filename.length == 0) {
+                        continue;
                     }
                     string quoted = ShellUtils.shellQuote(filename) ~ " ";
                     vte.feedChild(quoted);
@@ -3695,6 +3790,38 @@ private:
             stream.close(null);
         }
         vte.writeContentsSync(stream, VteWriteFlags.DEFAULT, null);
+    }
+
+    /**
+     * Copy entire terminal scrollback/output to the system clipboard.
+     * Useful for incident notes and Cytracon session logs.
+     * VTE 0.76+ also implements OSC 52 natively for remote editors.
+     */
+    void copyTerminalOutputToClipboard() {
+        import gio.MemoryOutputStream : MemoryOutputStream;
+        import glib.Bytes : Bytes;
+
+        try {
+            MemoryOutputStream mos = new MemoryOutputStream();
+            scope (exit) {
+                mos.close(null);
+            }
+            vte.writeContentsSync(mos, VteWriteFlags.DEFAULT, null);
+            Bytes bytes = mos.stealAsBytes();
+            if (bytes is null || bytes.getSize() == 0) {
+                return;
+            }
+            auto data = bytes.getData();
+            string text = cast(string) data.idup;
+            Clipboard cb = Clipboard.get(GDK_SELECTION_CLIPBOARD);
+            cb.setText(text, cast(int) text.length);
+            tracef("Copied %d bytes of terminal output to clipboard", text.length);
+        } catch (Exception e) {
+            warningf("Failed to copy terminal output: %s", e.msg);
+            showErrorDialog(cast(Window) getToplevel(),
+                format(_("Could not copy terminal output: %s"), e.msg),
+                _("Copy Output Failed"));
+        }
     }
 
 // Theme changed

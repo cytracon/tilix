@@ -30,6 +30,7 @@ enum ACTION_ZOOM_IN = "zoom-in";
 enum ACTION_ZOOM_OUT = "zoom-out";
 enum ACTION_ZOOM_NORMAL = "zoom-normal";
 enum ACTION_SAVE = "save";
+enum ACTION_COPY_OUTPUT = "copy-output";
 enum ACTION_SYNC_INPUT_OVERRIDE = "sync-input-override";
 enum ACTION_INSERT_NUMBER = "insert-number";
 enum ACTION_INSERT_PASSWORD = "insert-password";

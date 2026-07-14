@@ -153,15 +153,35 @@ enum REGEX_NEWS_MAN = "(?i:news:|man:|info:)[-[:alnum:]\\Q^_{|}~!\"#$%&'()*+,./;
 /**
  * This replaces all instances of $x tokens with values
  * from Regex match. The token $0 matches the whole match
- * whereas $1..$x are replaced with appropriate group match
+ * whereas $1..$x are replaced with appropriate group match.
+ *
+ * Call sites pass [fullMatch] ~ captureGroups (where captureGroups[0]
+ * is also the full match). Token $n therefore maps to matches[n + 1].
+ * Replacement runs from high index to low so $10 is not corrupted by $1.
  */
- string replaceMatchTokens(string tokenizedText, string[] matches) {
-     string result = tokenizedText;
-     foreach(i, match; matches) {
-        result = result.replace("$" ~ to!string(i - 1), match);
-     }
-     return result;
- }
+string replaceMatchTokens(string tokenizedText, string[] matches) {
+    string result = tokenizedText;
+    if (matches.length == 0) {
+        return result;
+    }
+    // matches[0] would become "$-1" — skip; start from matches[1] => $0
+    foreach_reverse (i, match; matches) {
+        if (i == 0) {
+            continue;
+        }
+        result = result.replace("$" ~ to!string(i - 1), match is null ? "" : match);
+    }
+    return result;
+}
+
+@safe unittest {
+    // $10 must not become (group1)+"0"
+    auto groups = ["FULL", "FULL", "one", "two", "three", "four", "five",
+                   "six", "seven", "eight", "nine", "ten"];
+    auto outp = replaceMatchTokens("cmd $10 $1 end", groups);
+    assert(outp == "cmd ten one end", outp);
+    assert(replaceMatchTokens("x $0 y", ["FULL", "FULL"]) == "x FULL y");
+}
 
 /**
  * Struct used to track matches in terminal for cases like context menu

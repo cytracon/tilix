@@ -2,9 +2,11 @@
 # This example is contributed by Martin Enlund
 # Example modified for Tilix
 # Shortcuts Provider was inspired by captain nemo extension
+# Cytracon: hardened remote URI handling (no shell=True, quote all fields)
 
 from gettext import gettext, textdomain
 from subprocess import Popen
+import re
 import shutil
 import shlex
 try:
@@ -25,6 +27,9 @@ TERMINAL = shutil.which("tilix")
 TILIX_KEYBINDINGS = "com.gexperts.Tilix.Keybindings"
 GSETTINGS_OPEN_TERMINAL = "nautilus-open"
 REMOTE_URI_SCHEME = ['ftp', 'sftp']
+# Conservative host/user validation to reject metacharacters
+_SAFE_HOST = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._:-]*$')
+_SAFE_USER = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]*$')
 textdomain("tilix")
 _ = gettext
 
@@ -33,10 +38,32 @@ def _checkdecode(s):
     return s.decode('utf-8') if isinstance(s, bytes) else s
 
 def open_terminal_in_file(filename):
+    if not TERMINAL:
+        return
     if filename:
         Popen([TERMINAL, '-w', filename])
     else:
         Popen([TERMINAL])
+
+def _build_ssh_command(result, remote_cd=None):
+    """Build a shellParseArgv-safe -e argument for ssh without shell=True."""
+    if not result.hostname or not _SAFE_HOST.match(result.hostname):
+        raise ValueError("unsafe hostname")
+    if result.username and not _SAFE_USER.match(result.username):
+        raise ValueError("unsafe username")
+
+    argv = ['ssh', '-t']
+    if result.port:
+        argv.extend(['-p', str(int(result.port))])
+    if result.username:
+        argv.append('%s@%s' % (result.username, result.hostname))
+    else:
+        argv.append(result.hostname)
+    if remote_cd:
+        # Single remote argument executed by ssh
+        argv.append('cd %s ; exec "$SHELL"' % shlex.quote(remote_cd))
+    # Join so Tilix shellParseArgv reconstructs argv correctly
+    return ' '.join(shlex.quote(a) for a in argv)
 
 # Nautilus 43 doesn't offer the LocationWidgetProvider any more
 if hasattr(Nautilus, "LocationWidgetProvider"):
@@ -81,18 +108,15 @@ if hasattr(Nautilus, "LocationWidgetProvider"):
 class OpenTilixExtension(GObject.GObject, Nautilus.MenuProvider):
 
     def _open_terminal(self, file_):
+        if not TERMINAL:
+            return
         if file_.get_uri_scheme() in REMOTE_URI_SCHEME:
             result = urlparse(file_.get_uri())
-            if result.username:
-                value = 'ssh -t {0}@{1}'.format(result.username,
-                                                result.hostname)
-            else:
-                value = 'ssh -t {0}'.format(result.hostname)
-            if result.port:
-                value = "{0} -p {1}".format(value, result.port)
-            if file_.is_directory():
-                value = '{0} cd {1} ; $SHELL'.format(value, shlex.quote(result.path))
-
+            try:
+                remote_cd = result.path if file_.is_directory() else None
+                value = _build_ssh_command(result, remote_cd)
+            except (ValueError, TypeError):
+                return
             Popen([TERMINAL, '-e', value])
         else:
             filename = Gio.File.new_for_uri(file_.get_uri()).get_path()

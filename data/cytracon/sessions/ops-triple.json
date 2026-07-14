@@ -1,0 +1,49 @@
+{
+    "version": "1.0",
+    "type": "Session",
+    "name": "Cytracon Ops (triple)",
+    "synchronizedInput": false,
+    "width": 1600,
+    "height": 900,
+    "uuid": "00000000-0000-4000-8000-000000000001",
+    "child": {
+        "type": "Paned",
+        "orientation": 0,
+        "position": 0.5,
+        "ratio": 0.5,
+        "child1": {
+            "type": "Terminal",
+            "profile": "default",
+            "directory": "/home/bbachmann",
+            "width": 800,
+            "height": 900,
+            "uuid": "00000000-0000-4000-8000-000000000011",
+            "title": "Local / AI"
+        },
+        "child2": {
+            "type": "Paned",
+            "orientation": 1,
+            "position": 0.5,
+            "ratio": 0.5,
+            "child1": {
+                "type": "Terminal",
+                "profile": "default",
+                "directory": "/home/bbachmann",
+                "width": 800,
+                "height": 450,
+                "uuid": "00000000-0000-4000-8000-000000000012",
+                "title": "SSH / Deploy",
+                "overrideCommand": "ssh -i /home/bbachmann/.ssh/id_cytracon2 root@157.90.81.172"
+            },
+            "child2": {
+                "type": "Terminal",
+                "profile": "default",
+                "directory": "/home/bbachmann",
+                "width": 800,
+                "height": 450,
+                "uuid": "00000000-0000-4000-8000-000000000013",
+                "title": "Logs / Monitor"
+            }
+        }
+    }
+}

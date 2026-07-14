@@ -88,6 +88,10 @@ enum SETTINGS_STRIP_FIRST_COMMENT_CHAR_ON_PASTE_KEY = "paste-strip-first-char";
 enum SETTINGS_STRIP_TRAILING_WHITESPACE = "paste-strip-trailing-whitespace";
 enum SETTINGS_PASTE_ADVANCED_DEFAULT_KEY="paste-advanced-default";
 enum SETTINGS_COPY_ON_SELECT_KEY = "copy-on-select";
+// Cytracon hardening / features
+enum SETTINGS_TRIGGER_CONFIRM_SHELL_KEY = "trigger-confirm-shell";
+enum SETTINGS_WARN_PASSWORD_REMOTE_KEY = "warn-password-on-remote";
+enum SETTINGS_OSC52_ENABLED_KEY = "osc52-enabled";
 enum SETTINGS_WARN_VTE_CONFIG_ISSUE_KEY = "warn-vte-config-issue";
 enum SETTINGS_TERMINAL_FOCUS_FOLLOWS_MOUSE_KEY = "focus-follow-mouse";
 enum SETTINGS_ENCODINGS_KEY = "encodings";
