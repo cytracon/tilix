@@ -1,0 +1,108 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Hardened "open Tilix here" helper for Nemo (and other file managers).
+
+Accepts a local path or URI (file://, sftp://, ftp://).
+Never uses shell=True. Quotes remote paths. Validates host/user.
+
+Usage:
+  tilix-open-location                  # home
+  tilix-open-location /path/to/dir
+  tilix-open-location file:///path
+  tilix-open-location sftp://user@host/path
+"""
+from __future__ import print_function
+
+import os
+import re
+import shlex
+import shutil
+import sys
+from subprocess import Popen
+
+try:
+    from urllib.parse import unquote, urlparse
+except ImportError:
+    from urllib import unquote
+    from urlparse import urlparse
+
+TERMINAL = shutil.which("tilix") or os.path.expanduser("~/.local/bin/tilix")
+REMOTE_SCHEMES = ("ftp", "sftp")
+_SAFE_HOST = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]*$")
+_SAFE_USER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def open_local(path):
+    if not TERMINAL or not os.path.isfile(TERMINAL):
+        sys.stderr.write("tilix not found\n")
+        return 1
+    if path:
+        path = os.path.expanduser(path)
+        if not os.path.isdir(path):
+            # if file selected, use parent dir
+            if os.path.isfile(path):
+                path = os.path.dirname(path) or path
+            else:
+                sys.stderr.write("not a directory: %s\n" % path)
+                return 1
+        Popen([TERMINAL, "-w", path])
+    else:
+        Popen([TERMINAL])
+    return 0
+
+
+def build_ssh_command(result, remote_cd=None):
+    if not result.hostname or not _SAFE_HOST.match(result.hostname):
+        raise ValueError("unsafe hostname")
+    if result.username and not _SAFE_USER.match(result.username):
+        raise ValueError("unsafe username")
+
+    argv = ["ssh", "-t"]
+    if result.port:
+        argv.extend(["-p", str(int(result.port))])
+    if result.username:
+        argv.append("%s@%s" % (result.username, result.hostname))
+    else:
+        argv.append(result.hostname)
+    if remote_cd:
+        argv.append('cd %s ; exec "$SHELL"' % shlex.quote(remote_cd))
+    # Tilix -e expects a shell-like string that shellParseArgv re-parses
+    return " ".join(shlex.quote(a) for a in argv)
+
+
+def open_uri(uri):
+    if not TERMINAL or not os.path.isfile(TERMINAL):
+        sys.stderr.write("tilix not found\n")
+        return 1
+    parsed = urlparse(uri)
+    scheme = (parsed.scheme or "file").lower()
+    if scheme == "file" or scheme == "":
+        path = unquote(parsed.path or "")
+        return open_local(path)
+    if scheme in REMOTE_SCHEMES:
+        try:
+            remote_cd = unquote(parsed.path) if parsed.path else None
+            if remote_cd == "/":
+                remote_cd = None
+            value = build_ssh_command(parsed, remote_cd)
+        except (ValueError, TypeError) as e:
+            sys.stderr.write("rejected remote URI: %s\n" % e)
+            return 1
+        Popen([TERMINAL, "-e", value])
+        return 0
+    sys.stderr.write("unsupported scheme: %s\n" % scheme)
+    return 1
+
+
+def main(argv):
+    if len(argv) <= 1 or not argv[1].strip():
+        return open_local(os.path.expanduser("~"))
+    arg = argv[1].strip()
+    if "://" in arg:
+        return open_uri(arg)
+    return open_local(arg)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv) or 0)

@@ -1,0 +1,12 @@
+[Nemo Action]
+Active=true
+Name=Open Remote Tilix
+Name[de]=Remote Tilix öffnen
+Comment=Open Tilix via SSH for sftp/ftp (hardened helper)
+Comment[de]=Tilix per SSH für sftp/ftp (gehärteter Helper)
+Exec=/home/bbachmann/.local/bin/tilix-open-location %U
+Selection=s
+Extensions=dir;
+Icon-Name=com.gexperts.Tilix
+EscapeSpaces=true
+Quote=double

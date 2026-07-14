@@ -1,0 +1,12 @@
+[Nemo Action]
+Active=true
+Name=Open Tilix Here
+Name[de]=Tilix hier öffnen
+Comment=Open Cytracon Tilix in this folder
+Comment[de]=Cytracon Tilix in diesem Ordner öffnen
+Exec=/home/bbachmann/.local/bin/tilix-open-location %P
+Selection=none
+Extensions=any;
+Icon-Name=com.gexperts.Tilix
+EscapeSpaces=true
+Quote=double
