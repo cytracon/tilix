@@ -25,3 +25,21 @@
 ### Packaging / identity
 - Version: `1.9.8-cytracon.1`
 - Fork: https://github.com/cytracon/tilix
+
+## 1.9.8-cytracon.4 — 2026-07-14
+
+### Features
+- Searchable bookmark popover in header bar
+- AI menu: unified recent Grok/Codex, resume, launch modes
+- Ops menu: shops, server/cache/status actions, ops layout, session log export
+- Preferences → Cytracon (+ AI Tools) for full configuration
+- Destructive command confirmation
+- Nemo hardened open-in-Tilix actions (`scripts/install-nemo-tilix-actions.sh`)
+
+### Fixes
+- AI resume listing when started from GNOME/Ubuntu Dock (PATH + FS fallback)
+- Bookmark pack install never overwrites real `bookmarks.json`
+
+## 1.9.8-cytracon.3 — 2026-07-14
+- AI resume list PATH fix + Grok/Codex filesystem fallback
+
