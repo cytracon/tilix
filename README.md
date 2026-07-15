@@ -72,42 +72,27 @@ Nemo does **not** load Nautilus Python extensions. Use the Nemo installer below.
 Repo is **public**: https://github.com/cytracon/tilix  
 Updates use **GitHub Releases** (prebuilt `linux-x86_64` tarball) — no LDC on laptops, **no token required**.
 
-### One script on every PC
+### One script for everything (`scripts/tilix-cytracon.sh`)
 
 ```bash
-# ohne Clone (nach erstem Publish auf GitHub):
-curl -fsSL https://raw.githubusercontent.com/cytracon/tilix/master/scripts/install-tilix-cytracon.sh | bash
+# Jeder PC — install/update (GitHub oder lokales tar.gz in Downloads/Drive):
+bash tilix-cytracon.sh
+# danach:
+tilix-update
+tilix-update --check | --force | --timer
 
-# oder Datei kopieren / aus Drive:
-bash install-tilix-cytracon.sh
+# ohne Clone (nach GitHub-Push des Scripts):
+curl -fsSL https://raw.githubusercontent.com/cytracon/tilix/master/scripts/tilix-cytracon.sh | bash
 
-# danach immer:
-tilix-update              # update
-tilix-update --check
-tilix-update --force
-tilix-update --timer      # täglich (systemd --user)
-
-# offline, wenn Package schon da:
-TILIX_TARBALL=~/Downloads/tilix-cytracon-*.tar.gz tilix-update
+# Build-PC:
+tilix-cytracon package              # tar.gz → /tmp + Downloads + Drive
+GITHUB_TOKEN=ghp_… tilix-cytracon publish   # package + Release
 ```
 
-Install path: `~/.local/libexec/tilix` + wrapper `~/.local/bin/tilix`.  
-After upgrade: fully quit (`pkill -x tilix`) and start again.
+Install path: `~/.local/libexec/tilix` + `~/.local/bin/tilix`.  
+After upgrade: `pkill -x tilix` and restart.
 
-### Publish a new version (build machine)
-
-```bash
-./scripts/publish-github-release.sh   # needs write token / logged-in git
-# or push tag v1.9.8-cytracon.N → GitHub Actions builds the release
-```
-
-### LAN deploy (optional)
-
-```bash
-./scripts/deploy-tilix-cytracon-home.sh   # package + scp to laptop/multimedia
-```
-
-Details: [docs/AUTO-UPDATE.md](docs/AUTO-UPDATE.md)
+Optional LAN: `./scripts/deploy-tilix-cytracon-home.sh`
 
 Ensure `~/.local/bin` is first on `PATH` so Cytracon wins over distro `/usr/bin/tilix`.
 
