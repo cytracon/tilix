@@ -206,9 +206,13 @@ Meson is also supported: [Building with Meson](https://github.com/gnunn1/tilix/w
 
 | Script | Purpose |
 |--------|---------|
+| **`scripts/tilix-cytracon.sh`** | **All-in-one:** install · update · package · publish · dock |
+| `scripts/tilix-update.sh` | Alias of `tilix-cytracon.sh` |
+| `scripts/install-tilix-cytracon.sh` | Alias of `tilix-cytracon.sh` |
 | `scripts/tilix-open-location` | Hardened open path/URI for file managers |
 | `scripts/install-nemo-tilix-actions.sh` | Install Nemo context-menu actions |
-| `scripts/install-cytracon-packs.sh` | Example sessions (and example bookmarks file only) |
+| `scripts/install-cytracon-packs.sh` | Example sessions (never overwrites bookmarks.json) |
+| `scripts/deploy-tilix-cytracon-home.sh` | LAN deploy to laptop / multimedia |
 | `install.sh` | Full resource install (schemas, icons, …) |
 
 ---
@@ -217,8 +221,10 @@ Meson is also supported: [Building with Meson](https://github.com/gnunn1/tilix/w
 
 | Tag | Highlights |
 |-----|------------|
+| `v1.9.8-cytracon.9` | Bookmark/AI capture fix, Grok/Codex accordion + kind resume, all-in-one updater, Ubuntu dock desktop entry |
+| `v1.9.8-cytracon.8` | Resume kind fix (no Grok→Codex) |
+| `v1.9.8-cytracon.7` | Bookmark accordion by theme |
 | `v1.9.8-cytracon.4` | Full Cytracon workflow UI + prefs |
-| `v1.9.8-cytracon.3` | AI resume PATH/FS fix |
 | `v1.9.8-cytracon.1` | Security hardening baseline |
 
 ---
