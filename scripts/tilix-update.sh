@@ -210,39 +210,6 @@ else
 fi
 
 # Prefer jq if available, else python3
-parse_release() {
-  if command -v jq >/dev/null 2>&1; then
-    REL_TAG="$(echo "$JSON" | jq -r '.tag_name // empty')"
-    REL_NAME="$(echo "$JSON" | jq -r '.name // empty')"
-    ASSET_URL="$(echo "$JSON" | jq -r '
-      .assets[]
-      | select(.name | test("linux-x86_64\\.tar\\.gz$"))
-      | .url
-    ' | head -1)"
-    ASSET_NAME="$(echo "$JSON" | jq -r '
-      .assets[]
-      | select(.name | test("linux-x86_64\\.tar\\.gz$"))
-      | .name
-    ' | head -1)"
-  else
-    eval "$(python3 - <<'PY' "$JSON"
-import json,sys
-j=json.loads(sys.argv[1] if len(sys.argv)>1 else sys.stdin.read())
-print("REL_TAG=%r" % (j.get("tag_name") or ""))
-print("REL_NAME=%r" % (j.get("name") or ""))
-url=""; name=""
-for a in j.get("assets") or []:
-    n=a.get("name") or ""
-    if n.endswith("linux-x86_64.tar.gz"):
-        url=a.get("url") or ""; name=n; break
-print("ASSET_URL=%r" % url)
-print("ASSET_NAME=%r" % name)
-PY
-)"
-  fi
-}
-
-# Fix python path: pass JSON via env to avoid arg length issues
 if command -v jq >/dev/null 2>&1; then
   REL_TAG="$(echo "$JSON" | jq -r '.tag_name // empty')"
   REL_NAME="$(echo "$JSON" | jq -r '.name // empty')"
