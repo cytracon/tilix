@@ -1,5 +1,10 @@
 # Cytracon Tilix Changelog
 
+## 1.9.8-cytracon.9 — 2026-07-14
+
+### Fixes
+- **Bookmarks always ran the last entry's command** — D loop-variable capture in GTK button delegates. Fixed with `makeCmdButton` / per-call `.dup` captures. Same fix for AI sessions, tools, shops, and quick actions.
+
 ## 1.9.8-cytracon.8 — 2026-07-14
 
 ### Fixes

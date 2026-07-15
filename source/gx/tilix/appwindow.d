@@ -542,6 +542,46 @@ private:
         return btn;
     }
 
+    /**
+     * Action button that runs a shell command on click.
+     * CRITICAL: use this (or a per-item helper) inside loops — capturing loop
+     * locals in a delegate reuses one stack slot, so every button would run
+     * the last item's command.
+     */
+    Button makeCmdButton(string title, string subtitle, string command, string label, Popover pop = null) {
+        // Parameters are by-value frames; each call gets its own capture for the delegate.
+        string cmd = command.dup;
+        string lbl = (label.length ? label : title).dup;
+        return makeActionButton(title, subtitle, {
+            if (pop !is null) pop.hide();
+            runConfiguredCommand(cmd, lbl);
+        });
+    }
+
+    /** Same capture-safe pattern for an arbitrary callback payload (id + kind, etc.). */
+    Button makeCapturedButton(string title, string subtitle, string a, string b,
+                              void delegate(string, string) onActivate, Popover pop = null) {
+        string ca = a.dup;
+        string cb = b.dup;
+        return makeActionButton(title, subtitle, {
+            if (pop !is null) pop.hide();
+            if (onActivate !is null) onActivate(ca, cb);
+        });
+    }
+
+    /** Capture AITool by value so loop iterations don't share one tool instance. */
+    void delegate() makeAIResumeClosure(AITool tool, Popover pop) {
+        AITool snap = tool;
+        snap.name = tool.name.dup;
+        snap.command = tool.command.dup;
+        snap.resumeCommand = tool.resumeCommand.dup;
+        snap.listCommand = tool.listCommand.dup;
+        return {
+            if (pop !is null) pop.hide();
+            openAIResume(snap);
+        };
+    }
+
     ScrolledWindow makeScrollBox(Box content, int height = 320) {
         auto sw = new ScrolledWindow(null, null);
         sw.setPolicy(PolicyType.NEVER, PolicyType.AUTOMATIC);
@@ -708,12 +748,10 @@ private:
                     auto inner = new Box(Orientation.VERTICAL, 0);
                     inner.setMarginStart(6);
                     foreach (item; visible) {
+                        // makeCmdButton: per-call capture — not loop-local n/c
                         string n = item.name;
-                        string c = item.cmd;
-                        auto btn = makeActionButton(n, c.length ? c : _("(no command)"), {
-                            pop.hide();
-                            runConfiguredCommand(c.length ? c : n, n);
-                        });
+                        string c = item.cmd.length ? item.cmd : item.name;
+                        auto btn = makeCmdButton(n, item.cmd.length ? item.cmd : _("(no command)"), c, n, pop);
                         inner.packStart(btn, false, false, 0);
                         shown++;
                     }
@@ -804,10 +842,10 @@ private:
                     if (s.status.length && s.status != "local") sub ~= " · " ~ s.status;
                     string id = s.id;
                     string k = (s.kind.length > 0) ? s.kind : kind;
-                    inner.packStart(makeActionButton(titleTxt, sub, {
-                        pop.hide();
-                        resumeUnifiedSession(id, k);
-                    }), false, false, 0);
+                    // Capture-safe: per-call id/kind, not shared loop locals
+                    inner.packStart(makeCapturedButton(titleTxt, sub, id, k,
+                        (string sid, string sk) { resumeUnifiedSession(sid, sk); }, pop),
+                        false, false, 0);
                 }
             }
             exp.add(inner);
@@ -844,36 +882,38 @@ private:
                     }), false, false, 0);
                 } else {
                     foreach (tool; tools) {
-                        AITool t = tool;
-                        listBox.packStart(makeActionButton(
-                            format(_("New — %s"), t.name), t.command, {
-                            pop.hide();
-                            runConfiguredCommand(t.command, t.name);
-                        }), false, false, 0);
-                        if (t.supportsResume()) {
+                        // Copy fields by value before creating any delegate
+                        string tName = tool.name.dup;
+                        string tCmd = tool.command.dup;
+                        string tResume = tool.resumeCommand.dup;
+                        string tList = tool.listCommand.dup;
+                        AITool tSnap;
+                        tSnap.name = tName;
+                        tSnap.command = tCmd;
+                        tSnap.resumeCommand = tResume;
+                        tSnap.listCommand = tList;
+
+                        listBox.packStart(makeCmdButton(
+                            format(_("New — %s"), tName), tCmd, tCmd, tName, pop),
+                            false, false, 0);
+                        if (tSnap.supportsResume()) {
                             listBox.packStart(makeActionButton(
-                                format(_("Browse sessions — %s"), t.name),
-                                _("Open session picker"), {
-                                pop.hide();
-                                openAIResume(t);
-                            }), false, false, 0);
-                            auto cmdLow = t.command.toLower();
+                                format(_("Browse sessions — %s"), tName),
+                                _("Open session picker"),
+                                makeAIResumeClosure(tSnap, pop)), false, false, 0);
+                            auto cmdLow = tCmd.toLower();
                             if (cmdLow.endsWith("grok") || cmdLow.canFind("/grok") || cmdLow.canFind("grokai")) {
-                                string cont = t.command ~ " -c";
-                                listBox.packStart(makeActionButton(
-                                    format(_("Continue last — %s"), t.name), cont, {
-                                    pop.hide();
-                                    runConfiguredCommand(cont, t.name);
-                                }), false, false, 0);
+                                string cont = tCmd ~ " -c";
+                                listBox.packStart(makeCmdButton(
+                                    format(_("Continue last — %s"), tName), cont, cont, tName, pop),
+                                    false, false, 0);
                             } else if (cmdLow.endsWith("codex") || cmdLow.canFind("/codex") || cmdLow.canFind("codexai")) {
-                                string lastCmd = t.isRemote()
+                                string lastCmd = tSnap.isRemote()
                                     ? `ssh -o BatchMode=yes -i ~/.ssh/id_cytracon2 root@157.90.81.172 -t 'cd /AI && codex resume --last'`
-                                    : (t.command ~ " resume --last");
-                                listBox.packStart(makeActionButton(
-                                    format(_("Resume last — %s"), t.name), lastCmd, {
-                                    pop.hide();
-                                    runConfiguredCommand(lastCmd, t.name);
-                                }), false, false, 0);
+                                    : (tCmd ~ " resume --last");
+                                listBox.packStart(makeCmdButton(
+                                    format(_("Resume last — %s"), tName), lastCmd, lastCmd, tName, pop),
+                                    false, false, 0);
                             }
                         }
                     }
@@ -966,12 +1006,8 @@ private:
                     }), false, false, 0);
                 } else {
                     foreach (s; shops) {
-                        string n = s.name;
-                        string c = s.command;
-                        listBox.packStart(makeActionButton(n, c, {
-                            pop.hide();
-                            runConfiguredCommand(c, n);
-                        }), false, false, 0);
+                        listBox.packStart(makeCmdButton(s.name, s.command, s.command, s.name, pop),
+                            false, false, 0);
                     }
                 }
 
@@ -985,12 +1021,8 @@ private:
                     listBox.packStart(makeSectionLabel(sec.toUpper()), false, false, 0);
                     foreach (a; actions) {
                         if (a.section != sec) continue;
-                        string n = a.name;
-                        string c = a.command;
-                        listBox.packStart(makeActionButton(n, c, {
-                            pop.hide();
-                            runConfiguredCommand(c, n);
-                        }), false, false, 0);
+                        listBox.packStart(makeCmdButton(a.name, a.command, a.command, a.name, pop),
+                            false, false, 0);
                     }
                 }
 
