@@ -88,19 +88,34 @@ installed_version() {
 
 install_self() {
   # Install this script as tilix-update + install-tilix-cytracon
-  local src="$1"
+  local src="${1:-}"
   mkdir -p "$PREFIX/bin"
-  if [[ -f "$src" && -r "$src" ]]; then
-    install -Dm755 "$src" "$PREFIX/bin/install-tilix-cytracon"
-    install -Dm755 "$src" "$PREFIX/bin/tilix-update"
+  if [[ -z "$src" || ! -f "$src" || ! -r "$src" ]]; then
+    # try BASH_SOURCE / $0
+    if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
+      src="${BASH_SOURCE[0]}"
+    elif [[ -n "${0:-}" && -f "$0" && "$0" != "bash" && "$0" != "-bash" ]]; then
+      src="$0"
+    fi
+  fi
+  if [[ -n "$src" && -f "$src" && -r "$src" ]]; then
+    cp -f "$src" "$PREFIX/bin/install-tilix-cytracon"
+    cp -f "$src" "$PREFIX/bin/tilix-update"
+    chmod 755 "$PREFIX/bin/install-tilix-cytracon" "$PREFIX/bin/tilix-update"
   else
-    # running via curl|bash — re-fetch self
+    # running via curl|bash — re-fetch self from GitHub (needs push of this file)
     local tmp
     tmp="$(mktemp)"
-    curl -fsSL "$SELF_URL" -o "$tmp" || die "Konnte Script nicht von GitHub laden: $SELF_URL"
-    chmod 755 "$tmp"
-    install -Dm755 "$tmp" "$PREFIX/bin/install-tilix-cytracon"
-    install -Dm755 "$tmp" "$PREFIX/bin/tilix-update"
+    if curl -fsSL "$SELF_URL" -o "$tmp" 2>/dev/null && [[ -s "$tmp" ]]; then
+      chmod 755 "$tmp"
+      cp -f "$tmp" "$PREFIX/bin/install-tilix-cytracon"
+      cp -f "$tmp" "$PREFIX/bin/tilix-update"
+      chmod 755 "$PREFIX/bin/install-tilix-cytracon" "$PREFIX/bin/tilix-update"
+    else
+      err "Warnung: Updater konnte nicht nach $PREFIX/bin kopiert werden (Script-Quelle unklar)."
+      rm -f "$tmp"
+      return 0
+    fi
     rm -f "$tmp"
   fi
   ok "Updater: $PREFIX/bin/tilix-update"
