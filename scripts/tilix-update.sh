@@ -10,6 +10,8 @@
 #   tilix-cytracon --timer              # täglicher Auto-Update
 #   tilix-cytracon --check
 #   tilix-cytracon --force
+#   tilix-cytracon dock                 # Ubuntu-Dock/Desktop-Entry (ohne Kill!)
+#   tilix-cytracon dock --kill          # + laufende Tilix-Prozesse beenden (optional)
 #
 # Ohne Clone:
 #   curl -fsSL https://raw.githubusercontent.com/cytracon/tilix/master/scripts/tilix-cytracon.sh | bash
@@ -51,12 +53,13 @@ usage() {
 # --- args ---
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    install|update|package|publish|timer|help|-h|--help)
+    install|update|package|publish|timer|dock|help|-h|--help)
       CMD="$1"; [[ "$1" == help || "$1" == -h || "$1" == --help ]] && CMD=help
       shift ;;
     --check) CHECK_ONLY=1; shift ;;
     --force) FORCE=1; shift ;;
     --timer|--install-timer) DO_TIMER=1; shift ;;
+    --dock) CMD=dock; shift ;;
     --tag) WANT_TAG="${2:-}"; shift 2 ;;
     --tag=*) WANT_TAG="${1#--tag=}"; shift ;;
     --skip-push) SKIP_PUSH=1; shift ;;
@@ -612,6 +615,133 @@ install_from_tarball() {
 }
 
 # =============================================================================
+# Ubuntu Dock / Desktop Entry
+# GNOME pin uses com.gexperts.Tilix.desktop. Old instances keep deleted binaries
+# in memory (e.g. cytracon.8) and the dock only focuses that window.
+# =============================================================================
+kill_old_tilix() {
+  # ONLY pkill -x (never pkill -f with paths — would kill this script)
+  local pid
+  pkill -x tilix 2>/dev/null || true
+  sleep 0.3
+  for pid in $(pgrep -x tilix 2>/dev/null || true); do
+    kill -TERM "$pid" 2>/dev/null || true
+  done
+  sleep 0.2
+  for pid in $(pgrep -x tilix 2>/dev/null || true); do
+    kill -KILL "$pid" 2>/dev/null || true
+  done
+}
+
+write_tilix_wrapper() {
+  mkdir -p "$PREFIX/bin" "$PREFIX/libexec"
+  # Absolute PREFIX so Dock/GNOME sessions without full user PATH still work
+  cat > "$PREFIX/bin/tilix" << EOF
+#!/usr/bin/env bash
+set -euo pipefail
+PREFIX="$PREFIX"
+export GSETTINGS_SCHEMA_DIR="\${PREFIX}/share/glib-2.0/schemas\${GSETTINGS_SCHEMA_DIR:+:\${GSETTINGS_SCHEMA_DIR}}"
+export XDG_DATA_DIRS="\${PREFIX}/share\${XDG_DATA_DIRS:+:\${XDG_DATA_DIRS}}"
+case ":\${XDG_DATA_DIRS}:" in
+  *:/usr/share:*) ;;
+  *) export XDG_DATA_DIRS="\${XDG_DATA_DIRS}:/usr/local/share:/usr/share" ;;
+esac
+exec "\${PREFIX}/libexec/tilix" "\$@"
+EOF
+  chmod 755 "$PREFIX/bin/tilix"
+}
+
+write_desktop_entry() {
+  local ver
+  ver="$(normalize_ver "$(installed_version)")"
+  ver="${ver:-Cytracon}"
+  mkdir -p "$PREFIX/share/applications"
+  cat > "$PREFIX/share/applications/com.gexperts.Tilix.desktop" << EOF
+[Desktop Entry]
+Version=1.1
+Type=Application
+Name=Tilix (Cytracon)
+Name[de]=Tilix (Cytracon)
+GenericName=Terminal
+Comment=Cytracon Tilix ${ver}
+Comment[de]=Cytracon Tilix ${ver}
+Keywords=shell;prompt;command;commandline;cmd;terminal;tilix;cytracon;
+Exec=${PREFIX}/bin/tilix %F
+TryExec=${PREFIX}/libexec/tilix
+Icon=com.gexperts.Tilix
+Terminal=false
+Categories=System;TerminalEmulator;X-GNOME-Utilities;
+StartupNotify=true
+StartupWMClass=com.gexperts.Tilix
+DBusActivatable=false
+Actions=new-window;new-session;preferences;
+
+[Desktop Action new-window]
+Name=New Window
+Name[de]=Neues Fenster
+Exec=${PREFIX}/bin/tilix --action=app-new-window
+
+[Desktop Action new-session]
+Name=New Session
+Name[de]=Neue Sitzung
+Exec=${PREFIX}/bin/tilix --action=app-new-session
+
+[Desktop Action preferences]
+Name=Preferences
+Name[de]=Einstellungen
+Exec=${PREFIX}/bin/tilix --preferences
+EOF
+  update-desktop-database "$PREFIX/share/applications" 2>/dev/null || true
+}
+
+# Ensure favorite still points at our app-id (same pin works)
+ensure_dock_favorite() {
+  if ! command -v gsettings >/dev/null 2>&1; then return 0; fi
+  local fav
+  fav="$(gsettings get org.gnome.shell favorite-apps 2>/dev/null || true)"
+  [[ -n "$fav" ]] || return 0
+  if echo "$fav" | grep -q 'com.gexperts.Tilix.desktop'; then
+    return 0
+  fi
+  # do not auto-add if user removed it; only report
+  log "Hinweis: Tilix nicht in Ubuntu-Favoriten — Pin manuell behalten (App: Tilix Cytracon)."
+}
+
+fix_ubuntu_dock() {
+  log "Ubuntu-Dock / Desktop-Entry…"
+  if [[ ! -x "$PREFIX/libexec/tilix" ]]; then
+    die "Kein Binary unter $PREFIX/libexec/tilix — zuerst: tilix-update"
+  fi
+  write_tilix_wrapper
+  write_desktop_entry
+  ensure_path
+  install_self "$(self_path)"
+  ensure_dock_favorite
+
+  local ver before after
+  ver="$(normalize_ver "$(installed_version)")"
+  before="$(pgrep -x tilix 2>/dev/null | wc -l | tr -d ' ')"
+  if [[ "${1:-}" != "--no-kill" ]]; then
+    log "Beende alte Tilix-Instanzen (Dock hält sonst gelöschte v8 im Speicher)…"
+    kill_old_tilix
+  fi
+  after="$(pgrep -x tilix 2>/dev/null | wc -l | tr -d ' ')"
+  ok "Desktop: $PREFIX/share/applications/com.gexperts.Tilix.desktop"
+  ok "Wrapper: $PREFIX/bin/tilix → $PREFIX/libexec/tilix"
+  ok "Version: ${ver:-?}"
+  if [[ "${1:-}" != "--no-kill" ]]; then
+    log "Alte Prozesse: ${before} → ${after}. Dock-Icon erneut klicken → startet ${ver}."
+  fi
+}
+
+post_install_finish() {
+  # Always refresh dock/desktop after install/update
+  fix_ubuntu_dock
+  [[ "$DO_TIMER" == 1 ]] && install_timer
+  ok "Fertig. Version: $(installed_version)"
+}
+
+# =============================================================================
 # Update / install (default)
 # =============================================================================
 cmd_update() {
@@ -634,9 +764,7 @@ cmd_update() {
     log "Lokales Package: $TILIX_TARBALL"
     [[ "$CHECK_ONLY" == 1 ]] && { log "würde installieren: $TILIX_TARBALL"; exit 1; }
     install_from_tarball "$TILIX_TARBALL"
-    [[ "$DO_TIMER" == 1 ]] && install_timer
-    ok "Fertig. Version: $(installed_version)"
-    log "Tilix neu starten:  pkill -x tilix"
+    post_install_finish
     return 0
   fi
 
@@ -652,8 +780,9 @@ cmd_update() {
       log "Update: ${CUR:-keins} → $NEW"; exit 1
     fi
     if [[ "$FORCE" != 1 && -n "$CUR" && "$CUR" == "$NEW" ]]; then
-      ok "Bereits auf $CUR."
+      ok "Bereits auf $CUR — Dock/Desktop trotzdem aktualisieren."
       install_self "$(self_path)"
+      fix_ubuntu_dock
       [[ "$DO_TIMER" == 1 ]] && install_timer
       return 0
     fi
@@ -664,9 +793,7 @@ cmd_update() {
     curl -fsSL -L --retry 3 -o "$tarf" "$ASSET_URL" || die "Download fehlgeschlagen"
     install_from_tarball "$tarf"
     rm -rf "$tmp"
-    [[ "$DO_TIMER" == 1 ]] && install_timer
-    ok "Fertig. Version: $(installed_version)"
-    log "Tilix neu starten:  pkill -x tilix"
+    post_install_finish
     return 0
   fi
 
@@ -677,16 +804,15 @@ cmd_update() {
     if [[ "$CHECK_ONLY" == 1 ]]; then log "Lokales Package: $LOCAL_PKG"; exit 1; fi
     if [[ "$FORCE" != 1 && -n "$CUR" ]]; then
       if [[ "$(basename "$LOCAL_PKG")" == *"$CUR"* ]]; then
-        ok "Bereits auf $CUR."
+        ok "Bereits auf $CUR — Dock/Desktop trotzdem aktualisieren."
         install_self "$(self_path)"
+        fix_ubuntu_dock
         [[ "$DO_TIMER" == 1 ]] && install_timer
         return 0
       fi
     fi
     install_from_tarball "$LOCAL_PKG"
-    [[ "$DO_TIMER" == 1 ]] && install_timer
-    ok "Fertig. Version: $(installed_version)"
-    log "Tilix neu starten:  pkill -x tilix"
+    post_install_finish
     return 0
   fi
 
@@ -708,6 +834,7 @@ case "$CMD" in
   help) usage; exit 0 ;;
   package) cmd_package; exit 0 ;;
   publish) cmd_publish ;;
+  dock) fix_ubuntu_dock ;;
   update|install) cmd_update ;;
   *) die "Unbekannter Befehl: $CMD" ;;
 esac
