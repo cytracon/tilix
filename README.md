@@ -72,16 +72,24 @@ Nemo does **not** load Nautilus Python extensions. Use the Nemo installer below.
 Repo is **public**: https://github.com/cytracon/tilix  
 Updates use **GitHub Releases** (prebuilt `linux-x86_64` tarball) — no LDC on laptops, **no token required**.
 
-### Update / first install
+### One script on every PC
 
 ```bash
-./scripts/tilix-update.sh          # or: tilix-update
-tilix-update --check               # exit 1 = update available
-tilix-update --force               # reinstall latest
-tilix-update --install-timer       # daily systemd --user timer
-```
+# ohne Clone (nach erstem Publish auf GitHub):
+curl -fsSL https://raw.githubusercontent.com/cytracon/tilix/master/scripts/install-tilix-cytracon.sh | bash
 
-Optional: `~/.config/tilix/github-token` only if you hit API rate limits.
+# oder Datei kopieren / aus Drive:
+bash install-tilix-cytracon.sh
+
+# danach immer:
+tilix-update              # update
+tilix-update --check
+tilix-update --force
+tilix-update --timer      # täglich (systemd --user)
+
+# offline, wenn Package schon da:
+TILIX_TARBALL=~/Downloads/tilix-cytracon-*.tar.gz tilix-update
+```
 
 Install path: `~/.local/libexec/tilix` + wrapper `~/.local/bin/tilix`.  
 After upgrade: fully quit (`pkill -x tilix`) and start again.
