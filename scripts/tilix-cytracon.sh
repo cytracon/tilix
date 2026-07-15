@@ -13,12 +13,10 @@
 #   tilix-cytracon dock                 # Ubuntu-Dock/Desktop-Entry (ohne Kill!)
 #   tilix-cytracon dock --kill          # + laufende Tilix-Prozesse beenden (optional)
 #
-# Google Drive / noexec-Mount (Multimedia):
-#   NICHT:  sudo ./tilix-cytracon.sh     # ← Permission denied + falscher Owner
-#   SONDERN:
-#     bash "/home/bbachmann/Google Drive/BBachmann/Downloads/tilix-cytracon.sh"
-#   oder:
-#     cp .../tilix-cytracon.sh /tmp/ && bash /tmp/tilix-cytracon.sh
+# noexec mounts (e.g. some cloud-sync folders):
+#   NICHT:  sudo ./tilix-cytracon.sh
+#   SONDERN:  bash /path/to/tilix-cytracon.sh
+#   oder:     cp tilix-cytracon.sh /tmp/ && bash /tmp/tilix-cytracon.sh
 #
 # Ohne Clone:
 #   curl -fsSL https://raw.githubusercontent.com/cytracon/tilix/master/scripts/tilix-cytracon.sh | bash
@@ -436,15 +434,13 @@ REMOTE
   ok "Package: $tar ($(du -h "$tar" | awk '{print $1}'))"
 
   # also drop into Downloads / Drive for other PCs
-  for d in \
-    "$HOME/Downloads" \
-    "$HOME/Google Drive/BBachmann/Downloads"
-  do
-    if [[ -d "$d" ]]; then
-      cp -f "$tar" "$d/"
-      me="$(self_path)"; [[ -n "$me" && -f "$me" ]] && cp -f "$me" "$d/tilix-cytracon.sh"
-      log "Kopie → $d/"
-    fi
+  # Optional extra copy dirs (colon-separated), e.g. TILIX_DIST_DIRS="$HOME/Downloads"
+  local d
+  for d in "$HOME/Downloads" ${TILIX_DIST_DIRS//:/ }; do
+    [[ -n "$d" && -d "$d" ]] || continue
+    cp -f "$tar" "$d/"
+    me="$(self_path)"; [[ -n "$me" && -f "$me" ]] && cp -f "$me" "$d/tilix-cytracon.sh"
+    log "Kopie → $d/"
   done
 }
 
@@ -591,10 +587,15 @@ find_local_package() {
   local f best="" best_mtime=0 mt
   roots+=(
     "${HOME}/Downloads" "${HOME}/download" "/tmp"
-    "${HOME}/Google Drive/BBachmann/Downloads"
-    "${HOME}/Google Drive/Meine Ablage/BBachmann/Downloads"
     "${HOME}/src/tilix"
   )
+  # Optional extra search roots (colon-separated)
+  if [[ -n "${TILIX_DIST_DIRS:-}" ]]; then
+    local xd
+    for xd in ${TILIX_DIST_DIRS//:/ }; do
+      [[ -n "$xd" ]] && roots+=("$xd")
+    done
+  fi
   local s; s="$(self_path)"; [[ -n "$s" ]] && roots+=("$(dirname "$s")")
   [[ -n "${XDG_DOWNLOAD_DIR:-}" ]] && roots+=("$XDG_DOWNLOAD_DIR")
   for dir in "${roots[@]}"; do

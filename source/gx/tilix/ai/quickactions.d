@@ -65,44 +65,24 @@ private string homeDir() {
     return h;
 }
 
-private string sshVps() {
-    string key = buildPath(homeDir(), ".ssh", "id_cytracon2");
-    return "ssh -o BatchMode=yes -i " ~ key ~ " root@157.90.81.172";
-}
-
+/**
+ * No infrastructure baked into the public tree.
+ * Configure via Preferences → Cytracon (GSettings keys: quick-actions, shops).
+ */
 string[] defaultQuickActionsClean() {
-    string s = sshVps();
-    return [
-        "VPS Shell|" ~ s ~ "|Server",
-        "Fail2ban Status|" ~ s ~ " 'fail2ban-client status'|Server",
-        "Load & Memory|" ~ s ~ " 'uptime; echo; free -h; echo; nproc'|Server",
-        "Disk Usage|" ~ s ~ " 'df -h / /var /home 2>/dev/null; df -h'|Server",
-        "Magento Cache Flush (cwd)|php bin/magento cache:flush|Cache",
-        "Redis FLUSHDB (danger)|redis-cli FLUSHDB|Cache",
-        "Varnish Ban All|" ~ s ~ " 'varnishadm \"ban req.url ~ .\"'|Cache",
-        "PHP-FPM Restart 8.4|" ~ s ~ " 'systemctl restart php8.4-fpm'|Reload",
-        "nginx Reload|" ~ s ~ " 'nginx -t && systemctl reload nginx'|Reload",
-        "MariaDB Slow Log Tail|" ~ s ~ " 'tail -50 /var/log/mysql/mariadb-slow.log 2>/dev/null || journalctl -u mariadb -n 30 --no-pager'|Status"
-    ];
+    return [];
 }
 
 string[] defaultShops() {
-    string s = sshVps();
-    return [
-        "Platinum Hyvä (web436)|" ~ s ~ " 'cd /var/www/clients/client4/web436/web && sudo -u web436 bash'",
-        "Platinum Staging (web384)|" ~ s ~ " 'cd /var/www/clients/client4/web384/web && sudo -u web384 bash'",
-        "Platinum Prod (web55)|" ~ s ~ " 'cd /var/www/clients/client4/web55/web && sudo -u web55 bash'",
-        "Schweizerwerk (web429)|" ~ s ~ " 'cd /var/www/clients/client138/web429/web && sudo -u web429 bash'",
-        "Packshop (web53)|" ~ s ~ " 'cd /var/www/clients/client14/web53/web && sudo -u web53 bash'",
-        "Cytracon (web12)|" ~ s ~ " 'cd /var/www/clients/client1/web12/web && sudo -u web12 bash'"
-    ];
+    return [];
 }
 
 QuickAction[] loadQuickActions(GSettings gs = null) {
     if (gs is null) gs = new GSettings(SETTINGS_ID);
     string[] raw;
     try { raw = gs.getStrv(SETTINGS_QUICK_ACTIONS_KEY); } catch (Exception) { raw = null; }
-    if (raw is null || raw.length == 0) raw = defaultQuickActionsClean();
+    // Empty list is valid — do not inject host-specific defaults
+    if (raw is null) raw = defaultQuickActionsClean();
     QuickAction[] outp;
     foreach (line; raw) {
         if (line.strip().length == 0) continue;
@@ -125,7 +105,8 @@ ShopEntry[] loadShops(GSettings gs = null) {
     if (gs is null) gs = new GSettings(SETTINGS_ID);
     string[] raw;
     try { raw = gs.getStrv(SETTINGS_SHOPS_KEY); } catch (Exception) { raw = null; }
-    if (raw is null || raw.length == 0) raw = defaultShops();
+    // Empty list is valid — shops come only from Preferences / GSettings
+    if (raw is null) raw = defaultShops();
     ShopEntry[] outp;
     foreach (line; raw) {
         if (line.strip().length == 0) continue;

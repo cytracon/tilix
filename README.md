@@ -5,7 +5,7 @@
 
 **Repository:** https://github.com/cytracon/tilix  
 **Upstream:** https://github.com/gnunn1/tilix (minimal maintenance; [maintainers wanted](https://github.com/gnunn1/tilix/issues/1700))  
-**Current version:** **1.9.8-cytracon.9**  
+**Current version:** **1.9.8-cytracon.10**  
 **Install script:** [`scripts/tilix-cytracon.sh`](scripts/tilix-cytracon.sh) (install · update · package · publish · dock)
 
 Tiling terminal emulator for Linux (GTK 3 + VTE), forked for **Cytracon ops / Magento / AI workflows**. Upstream Tilix features remain; this fork adds security fixes, header-bar productivity tools, and file-manager integration for **Nemo** (and Nautilus).
@@ -13,7 +13,8 @@ Tiling terminal emulator for Linux (GTK 3 + VTE), forked for **Cytracon ops / Ma
 Original project site: [tilix-web](https://gnunn1.github.io/tilix-web).
 
 > **Release rule:** Bei jeder neuen Version immer mit anpassen:  
-> `source/gx/tilix/constants.d` · `docs/CYTRACON-CHANGELOG.md` · **`README.md` (diese Datei)** · Tag `v1.9.8-cytracon.N` · `tilix-cytracon package` / `publish`.
+> `source/gx/tilix/constants.d` · `docs/CYTRACON-CHANGELOG.md` · **`README.md` (diese Datei)** · Tag `v1.9.8-cytracon.N` · `tilix-cytracon package` / `publish`.  
+> Never commit hostnames, IPs, SSH keys, or shop paths — those belong in Preferences / local env only.
 
 ---
 
@@ -40,7 +41,7 @@ Original project site: [tilix-web](https://gnunn1.github.io/tilix-web).
   - **Shops** list (`name\|command`)
   - **Quick actions** (`name\|command\|section`)
 
-Empty shops/quick-actions lists load Cytracon defaults (VPS, Fail2ban, Magento shops, cache flush, etc.).
+Shops and quick actions are **empty by default** — configure in Preferences (no host/SSH infrastructure is baked into the app).
 
 ### Security & reliability
 
@@ -100,23 +101,18 @@ tilix-cytracon dock           # Desktop/Dock-Eintrag erneuern (ohne Kill)
 # tilix-cytracon dock --kill  # optional: laufende Tilix-Fenster beenden
 ```
 
-#### Google Drive / Multimedia (oft `noexec`)
+#### Cloud-sync / noexec mounts
 
 ```bash
-# FALSCH:
-#   sudo ./tilix-cytracon.sh          → Permission denied + falscher Owner
-#   ./tilix-cytracon.sh               → oft noexec auf Drive
-
+# FALSCH:  sudo ./tilix-cytracon.sh   or   ./script on noexec volume
 # RICHTIG:
-bash "/home/bbachmann/Google Drive/BBachmann/Downloads/tilix-cytracon.sh"
-
-# oder:
-cp "/home/bbachmann/Google Drive/BBachmann/Downloads/tilix-cytracon.sh" /tmp/
-cp "/home/bbachmann/Google Drive/BBachmann/Downloads"/tilix-cytracon-*-linux-x86_64.tar.gz /tmp/ 2>/dev/null || true
+bash /path/to/tilix-cytracon.sh
+# or:
+cp tilix-cytracon.sh /tmp/ && cp tilix-cytracon-*-linux-x86_64.tar.gz /tmp/
 bash /tmp/tilix-cytracon.sh
 ```
 
-Das Script findet Packages automatisch in `~/Downloads`, Google Drive Downloads und `/tmp`.
+Packages are searched in `~/Downloads`, `/tmp`, and optional `TILIX_DIST_DIRS` (colon-separated).
 
 #### Ohne lokale Datei (nach Push des Scripts auf GitHub)
 
@@ -212,7 +208,7 @@ Meson is also supported: [Building with Meson](https://github.com/gnunn1/tilix/w
 | `scripts/tilix-open-location` | Hardened open path/URI for file managers |
 | `scripts/install-nemo-tilix-actions.sh` | Install Nemo context-menu actions |
 | `scripts/install-cytracon-packs.sh` | Example sessions (never overwrites bookmarks.json) |
-| `scripts/deploy-tilix-cytracon-home.sh` | LAN deploy to laptop / multimedia |
+| `scripts/deploy-tilix-cytracon-home.sh` | LAN deploy to hosts from `~/.config/tilix/deploy.env` |
 | `install.sh` | Full resource install (schemas, icons, …) |
 
 ---
@@ -221,6 +217,7 @@ Meson is also supported: [Building with Meson](https://github.com/gnunn1/tilix/w
 
 | Tag | Highlights |
 |-----|------------|
+| `v1.9.8-cytracon.10` | No infra hardcodes; shops/ops/remote AI only via Settings |
 | `v1.9.8-cytracon.9` | Bookmark/AI capture fix, Grok/Codex accordion + kind resume, all-in-one updater, Ubuntu dock desktop entry |
 | `v1.9.8-cytracon.8` | Resume kind fix (no Grok→Codex) |
 | `v1.9.8-cytracon.7` | Bookmark accordion by theme |

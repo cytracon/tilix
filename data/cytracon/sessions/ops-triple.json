@@ -1,7 +1,7 @@
 {
     "version": "1.0",
     "type": "Session",
-    "name": "Cytracon Ops (triple)",
+    "name": "Ops (triple)",
     "synchronizedInput": false,
     "width": 1600,
     "height": 900,
@@ -14,11 +14,11 @@
         "child1": {
             "type": "Terminal",
             "profile": "default",
-            "directory": "/home/bbachmann",
+            "directory": "~",
             "width": 800,
             "height": 900,
             "uuid": "00000000-0000-4000-8000-000000000011",
-            "title": "Local / AI"
+            "title": "Local"
         },
         "child2": {
             "type": "Paned",
@@ -28,21 +28,20 @@
             "child1": {
                 "type": "Terminal",
                 "profile": "default",
-                "directory": "/home/bbachmann",
+                "directory": "~",
                 "width": 800,
                 "height": 450,
                 "uuid": "00000000-0000-4000-8000-000000000012",
-                "title": "SSH / Deploy",
-                "overrideCommand": "ssh -i /home/bbachmann/.ssh/id_cytracon2 root@157.90.81.172"
+                "title": "SSH (set override in session or Preferences)"
             },
             "child2": {
                 "type": "Terminal",
                 "profile": "default",
-                "directory": "/home/bbachmann",
+                "directory": "~",
                 "width": 800,
                 "height": 450,
                 "uuid": "00000000-0000-4000-8000-000000000013",
-                "title": "Logs / Monitor"
+                "title": "Monitor"
             }
         }
     }

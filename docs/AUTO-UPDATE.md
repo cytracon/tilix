@@ -34,7 +34,6 @@ Optional Token nur gegen API-Rate-Limits (60/h unauth) bzw. zum **Publishen**:
 |-----|------------|
 | `~/.config/tilix/github-token` | optional (chmod 600) |
 | `$GITHUB_TOKEN` / `$GH_TOKEN` | Env override |
-| `/root/.github-token` | Fallback Desktop/Server |
 
 **Publish** (write): Contents: **Read and write** (oder classic `repo` / `gh` login)
 

@@ -2,29 +2,32 @@
 # =============================================================================
 # deploy-tilix-cytracon-home.sh
 #
-# Baut das Cytracon-Tilix-Paket vom Desktop und installiert es auf:
-#   - bbachmann-laptop   (default 192.168.178.162)
-#   - multimedia-laptop  (default 192.168.178.164)
+# Build package and deploy to user-defined hosts via SSH.
+# No infrastructure defaults in-repo — set env (or source a local env file).
 #
 # Usage:
-#   ./scripts/deploy-tilix-cytracon-home.sh              # package + deploy both
+#   # required for deploy:
+#   export REMOTE_USER=me
+#   export HOST_A_IP=192.0.2.10 HOST_A_NAME=laptop
+#   export HOST_B_IP=192.0.2.11 HOST_B_NAME=media   # optional second host
+#   ./scripts/deploy-tilix-cytracon-home.sh
+#
 #   ./scripts/deploy-tilix-cytracon-home.sh --package-only
 #   ./scripts/deploy-tilix-cytracon-home.sh --deploy-only
-#   ./scripts/deploy-tilix-cytracon-home.sh laptop        # only laptop
-#   ./scripts/deploy-tilix-cytracon-home.sh multimedia    # only multimedia
+#   ./scripts/deploy-tilix-cytracon-home.sh host-a
+#   ./scripts/deploy-tilix-cytracon-home.sh host-b
 #
-# Env overrides:
-#   LAPTOP_HOST / LAPTOP_IP
-#   MULTIMEDIA_HOST / MULTIMEDIA_IP
-#   REMOTE_USER   (default: bbachmann)
-#   SSH_KEY       (default: ~/.ssh/id_ed25519, fallback id_cytracon2)
-#   TILIX_BIN     (default: ~/.local/libexec/tilix or repo ./tilix)
-#   PKG_DIR       (default: /tmp)
+# Optional env file (not in git): ~/.config/tilix/deploy.env
+#   REMOTE_USER=…
+#   HOST_A_IP=… HOST_A_NAME=…
+#   HOST_B_IP=… HOST_B_NAME=…
+#   SSH_KEY=~/.ssh/id_ed25519
+#   TILIX_BIN=…  PKG_DIR=/tmp
 # =============================================================================
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# Prefer real repo layout; if this script lives outside the repo (e.g. Google Drive),
+# Prefer real repo layout; if this script lives outside the repo,
 # fall back to ~/src/tilix or TILIX_REPO.
 if [[ -d "${SCRIPT_DIR}/../source/gx/tilix" ]]; then
   REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -36,11 +39,18 @@ else
   REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 fi
 
-REMOTE_USER="${REMOTE_USER:-bbachmann}"
-LAPTOP_HOST="${LAPTOP_HOST:-bbachmann-laptop}"
-LAPTOP_IP="${LAPTOP_IP:-192.168.178.162}"
-MULTIMEDIA_HOST="${MULTIMEDIA_HOST:-multimedia-laptop}"
-MULTIMEDIA_IP="${MULTIMEDIA_IP:-192.168.178.164}"
+# Local-only deploy targets (never commit real values)
+if [[ -f "${HOME}/.config/tilix/deploy.env" ]]; then
+  # shellcheck disable=SC1091
+  source "${HOME}/.config/tilix/deploy.env"
+fi
+
+REMOTE_USER="${REMOTE_USER:-$USER}"
+# Back-compat aliases if someone still exports LAPTOP_* / MULTIMEDIA_*
+HOST_A_NAME="${HOST_A_NAME:-${LAPTOP_HOST:-host-a}}"
+HOST_A_IP="${HOST_A_IP:-${LAPTOP_IP:-}}"
+HOST_B_NAME="${HOST_B_NAME:-${MULTIMEDIA_HOST:-host-b}}"
+HOST_B_IP="${HOST_B_IP:-${MULTIMEDIA_IP:-}}"
 PKG_DIR="${PKG_DIR:-/tmp}"
 STAGE_NAME="tilix-cytracon-deploy"
 
@@ -61,13 +71,13 @@ resolve_key() {
     echo "$SSH_KEY"
     return
   fi
-  for k in "$HOME/.ssh/id_ed25519" "$HOME/.ssh/id_cytracon2" "$HOME/.ssh/id_cytracon"; do
+  for k in "$HOME/.ssh/id_ed25519" "$HOME/.ssh/id_rsa" "$HOME/.ssh/id_ecdsa"; do
     if [[ -f "$k" ]]; then
       echo "$k"
       return
     fi
   done
-  die "Kein SSH-Key gefunden (id_ed25519 / id_cytracon2)."
+  die "Kein SSH-Key gefunden. Setze SSH_KEY=… oder lege id_ed25519 an."
 }
 
 resolve_binary() {
@@ -346,15 +356,15 @@ usage() {
 # ---------------------------------------------------------------------------
 main() {
   local mode="all"  # all | package | deploy
-  local only=""     # "" | laptop | multimedia
+  local only=""     # "" | host-a | host-b
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
       -h|--help) usage; exit 0 ;;
       --package-only) mode="package"; shift ;;
       --deploy-only)  mode="deploy"; shift ;;
-      laptop|bbachmann-laptop) only="laptop"; shift ;;
-      multimedia|multimedia-laptop) only="multimedia"; shift ;;
+      host-a|a|1) only="host-a"; shift ;;
+      host-b|b|2) only="host-b"; shift ;;
       *)
         err "Unbekanntes Argument: $1"
         usage
@@ -382,21 +392,25 @@ main() {
   fi
   [[ -n "${PACKAGE_TAR:-}" && -f "$PACKAGE_TAR" ]] || die "Kein Package gefunden. Zuerst ohne --deploy-only ausführen."
 
-  local fail=0
-  if [[ -z "$only" || "$only" == "laptop" ]]; then
-    deploy_host "$LAPTOP_HOST" "$LAPTOP_IP" || fail=$((fail + 1))
+  if [[ -z "$HOST_A_IP" && -z "$HOST_B_IP" ]]; then
+    die "Keine Deploy-Ziele. Setze HOST_A_IP / HOST_B_IP (oder ~/.config/tilix/deploy.env)."
   fi
-  if [[ -z "$only" || "$only" == "multimedia" ]]; then
-    deploy_host "$MULTIMEDIA_HOST" "$MULTIMEDIA_IP" || fail=$((fail + 1))
+
+  local fail=0
+  if [[ -n "$HOST_A_IP" && ( -z "$only" || "$only" == "host-a" ) ]]; then
+    deploy_host "$HOST_A_NAME" "$HOST_A_IP" || fail=$((fail + 1))
+  fi
+  if [[ -n "$HOST_B_IP" && ( -z "$only" || "$only" == "host-b" ) ]]; then
+    deploy_host "$HOST_B_NAME" "$HOST_B_IP" || fail=$((fail + 1))
   fi
 
   if [[ "$fail" -gt 0 ]]; then
-    err "Fertig mit $fail Fehler(n). Hosts online? IPs korrekt?"
-    err "Laptop:    $LAPTOP_HOST → $LAPTOP_IP"
-    err "Multimedia: $MULTIMEDIA_HOST → $MULTIMEDIA_IP"
+    err "Fertig mit $fail Fehler(n). Hosts online? IPs in deploy.env korrekt?"
+    [[ -n "$HOST_A_IP" ]] && err "Host A: $HOST_A_NAME → $HOST_A_IP"
+    [[ -n "$HOST_B_IP" ]] && err "Host B: $HOST_B_NAME → $HOST_B_IP"
     exit 1
   fi
-  ok "Alle Zielsysteme aktualisiert."
+  ok "Alle konfigurierten Ziele aktualisiert."
 }
 
 main "$@"

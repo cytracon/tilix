@@ -150,17 +150,16 @@ string resolveCodexBinary() {
     return "codex";
 }
 
-/** Default Cytracon AI tools (absolute-ish paths where possible). */
+/**
+ * Generic local AI tool defaults only (no host/SSH infrastructure).
+ * Remote/server tools must be configured in Preferences → AI Tools (GSettings).
+ */
 string[] defaultAIToolSettings() {
     string grok = resolveGrokBinary();
     string codex = resolveCodexBinary();
-    string key = buildPath(homeDir(), ".ssh", "id_cytracon2");
-    string sshBase = "ssh -o BatchMode=yes -i " ~ key ~ " root@157.90.81.172";
     return [
         "Grok|" ~ grok ~ "|" ~ grok ~ " --resume {id}|" ~ grok ~ " sessions list -n 40",
-        "Codex|" ~ codex ~ "|" ~ codex ~ " resume {id}|",
-        "Grok AI (Server)|" ~ sshBase ~ " -t grokai|" ~ sshBase ~ " -t 'cd /AI && /AI/.grok/bin/grok --resume {id}'|" ~ sshBase ~ " 'cd /AI && /AI/.grok/bin/grok sessions list -n 25'",
-        "Codex AI (Server)|" ~ sshBase ~ " -t codexai|" ~ sshBase ~ " -t 'cd /AI && codex resume {id}'|"
+        "Codex|" ~ codex ~ "|" ~ codex ~ " resume {id}|"
     ];
 }
 

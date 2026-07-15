@@ -2,9 +2,9 @@
 Active=true
 Name=Open in Tilix
 Name[de]=In Tilix öffnen
-Comment=Open selected folder in Cytracon Tilix
-Comment[de]=Ausgewählten Ordner in Cytracon Tilix öffnen
-Exec=/home/bbachmann/.local/bin/tilix-open-location %F
+Comment=Open selected folder in Tilix
+Comment[de]=Gewählten Ordner in Tilix öffnen
+Exec=tilix-open-location %F
 Selection=s
 Extensions=dir;
 Icon-Name=com.gexperts.Tilix

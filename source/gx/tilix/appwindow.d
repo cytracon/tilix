@@ -908,12 +908,13 @@ private:
                                     format(_("Continue last — %s"), tName), cont, cont, tName, pop),
                                     false, false, 0);
                             } else if (cmdLow.endsWith("codex") || cmdLow.canFind("/codex") || cmdLow.canFind("codexai")) {
-                                string lastCmd = tSnap.isRemote()
-                                    ? `ssh -o BatchMode=yes -i ~/.ssh/id_cytracon2 root@157.90.81.172 -t 'cd /AI && codex resume --last'`
-                                    : (tCmd ~ " resume --last");
-                                listBox.packStart(makeCmdButton(
-                                    format(_("Resume last — %s"), tName), lastCmd, lastCmd, tName, pop),
-                                    false, false, 0);
+                                // Local codex only — remote resume commands must be set in Preferences
+                                if (!tSnap.isRemote()) {
+                                    string lastCmd = tCmd ~ " resume --last";
+                                    listBox.packStart(makeCmdButton(
+                                        format(_("Resume last — %s"), tName), lastCmd, lastCmd, tName, pop),
+                                        false, false, 0);
+                                }
                             }
                         }
                     }

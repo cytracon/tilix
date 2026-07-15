@@ -363,12 +363,12 @@
     <key name="quick-actions" type="as">
       <default>[]</default>
       <summary>Quick actions for the header Ops menu</summary>
-      <description>Each entry: name|command|section. Empty uses Cytracon built-in defaults (Server, Cache, Status).</description>
+      <description>Each entry: name|command|section. Empty means no built-in actions — configure in Preferences (no host defaults in the app).</description>
     </key>
     <key name="shops" type="as">
       <default>[]</default>
       <summary>Shop launcher entries</summary>
-      <description>Each entry: name|command. Empty uses Cytracon Magento shop defaults.</description>
+      <description>Each entry: name|command. Empty means no shops — configure in Preferences (no host defaults in the app).</description>
     </key>
     <key name="header-show-bookmarks" type="b">
       <default>true</default>

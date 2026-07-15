@@ -1,5 +1,14 @@
 # Cytracon Tilix Changelog
 
+## 1.9.8-cytracon.10 — 2026-07-15
+
+### Privacy / public repo
+- **No server/infrastructure hardcodes** in the published tree
+- Shops, quick actions, remote AI tools: **GSettings only** (empty defaults)
+- Example bookmarks/session layouts use generic placeholders
+- Deploy script reads targets from env / `~/.config/tilix/deploy.env` (not in git)
+- Nemo actions use `tilix-open-location` on PATH (no absolute home paths)
+
 ## 1.9.8-cytracon.9 — 2026-07-14
 
 ### Fixes

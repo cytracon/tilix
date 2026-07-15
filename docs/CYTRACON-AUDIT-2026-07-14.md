@@ -2,7 +2,7 @@
 
 **Fork:** https://github.com/cytracon/tilix  
 **Upstream:** https://github.com/gnunn1/tilix  
-**Local clone:** `/home/bbachmann/src/tilix`  
+**Local clone:** (local path omitted — not published)  
 **Installed system version:** Tilix 1.9.6 / VTE 0.84 / GTK 3.24.52  
 **Upstream tag/version in tree:** 1.9.7 (MPL-2.0, D language, GTK3 + VTE via GtkD 3.11.0)
 
