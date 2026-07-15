@@ -2,33 +2,22 @@
 # =============================================================================
 # tilix-update.sh — keep Cytracon Tilix current from GitHub Releases
 #
-# Works on every machine (desktop, laptop, multimedia) without building.
-# Repo is PUBLIC (https://github.com/cytracon/tilix) — no token required for updates.
-# Optional token still helps avoid GitHub API rate limits (60/h unauthenticated).
-#
-# Optional token lookup:
-#   1) $GITHUB_TOKEN / $GH_TOKEN
-#   2) ~/.config/tilix/github-token
-#   3) ~/.config/gh/hosts.yml
-#   4) /root/.github-token
+# Public repo: https://github.com/cytracon/tilix
+# No token required. Uses git tags + direct release asset URLs (no API rate limit).
 #
 # Usage:
 #   tilix-update                 # install latest if newer
-#   tilix-update --check         # only print status (exit 0=up-to-date, 1=update avail, 2=error)
-#   tilix-update --force         # reinstall latest even if same version
+#   tilix-update --check         # status only (0=ok, 1=update, 2=error)
+#   tilix-update --force         # reinstall latest
 #   tilix-update --tag v1.9.8-cytracon.9
-#   tilix-update --install-timer # install daily systemd --user timer
-#
-# Env:
-#   TILIX_REPO=cytracon/tilix
-#   TILIX_PREFIX=$HOME/.local
-#   TILIX_UPDATE_CHANNEL=stable   # reserved
+#   tilix-update --install-timer # daily systemd --user timer
 # =============================================================================
 set -euo pipefail
 
 REPO="${TILIX_REPO:-cytracon/tilix}"
 PREFIX="${TILIX_PREFIX:-$HOME/.local}"
-API="https://api.github.com/repos/${REPO}"
+GIT_URL="${TILIX_GIT_URL:-https://github.com/${REPO}.git}"
+WEB="https://github.com/${REPO}"
 CHECK_ONLY=0
 FORCE=0
 WANT_TAG=""
@@ -39,16 +28,16 @@ for arg in "$@"; do
     --check) CHECK_ONLY=1 ;;
     --force) FORCE=1 ;;
     --tag=*) WANT_TAG="${arg#--tag=}" ;;
-    --tag) shift_next=1 ;;
+    --tag)   NEXT_TAG=1 ;;
     --install-timer) INSTALL_TIMER=1 ;;
     -h|--help)
-      sed -n '2,30p' "$0" | sed 's/^# \?//'
+      sed -n '2,20p' "$0" | sed 's/^# \?//'
       exit 0
       ;;
     *)
-      if [[ "${shift_next:-0}" == 1 ]]; then
+      if [[ "${NEXT_TAG:-0}" == 1 ]]; then
         WANT_TAG="$arg"
-        shift_next=0
+        NEXT_TAG=0
       fi
       ;;
   esac
@@ -67,66 +56,103 @@ resolve_token() {
     "${XDG_CONFIG_HOME:-$HOME/.config}/tilix/github-token" \
     /root/.github-token
   do
-    if [[ -f "$f" && -r "$f" ]]; then
-      tr -d '[:space:]' < "$f"
-      return
-    fi
+    if [[ -f "$f" && -r "$f" ]]; then tr -d '[:space:]' < "$f"; return; fi
   done
-  # gh hosts.yml: oauth_token: ghp_...
   local hosts="${HOME}/.config/gh/hosts.yml"
   if [[ -f "$hosts" ]]; then
     local t
     t="$(sed -n 's/.*oauth_token:[[:space:]]*//p' "$hosts" | head -1 | tr -d '[:space:]')"
-    if [[ -n "$t" ]]; then echo "$t"; return; fi
+    [[ -n "$t" ]] && { echo "$t"; return; }
   fi
   return 1
 }
 
-api_curl() {
-  local url="$1"
-  local token="$2"
-  if [[ -n "$token" ]]; then
-    curl -fsSL \
-      -H "Accept: application/vnd.github+json" \
-      -H "Authorization: Bearer ${token}" \
-      -H "X-GitHub-Api-Version: 2022-11-28" \
-      "$url"
-  else
-    curl -fsSL \
-      -H "Accept: application/vnd.github+json" \
-      -H "X-GitHub-Api-Version: 2022-11-28" \
-      "$url"
-  fi
+normalize_ver() {
+  local v="${1#v}"
+  echo "$v"
 }
 
 installed_version() {
   local bin=""
   for b in "$PREFIX/libexec/tilix" "$PREFIX/bin/tilix" "$(command -v tilix 2>/dev/null || true)"; do
     if [[ -n "$b" && -x "$b" ]]; then
-      # skip shell wrappers that are not ELF
       if file "$b" 2>/dev/null | grep -qi 'ELF'; then
-        bin="$b"
-        break
+        bin="$b"; break
       elif [[ -x "$PREFIX/libexec/tilix" ]]; then
-        bin="$PREFIX/libexec/tilix"
-        break
+        bin="$PREFIX/libexec/tilix"; break
       fi
     fi
   done
-  if [[ -z "$bin" ]]; then
-    echo ""
-    return
-  fi
+  [[ -z "$bin" ]] && { echo ""; return; }
   "$bin" --version 2>/dev/null \
     | sed -n 's/.*Tilix version:[[:space:]]*//p' \
     | head -1 | tr -d '[:space:]' || true
 }
 
-normalize_ver() {
-  # strip leading v
-  local v="$1"
-  v="${v#v}"
-  echo "$v"
+# Sort cytracon tags: prefer higher .N after cytracon.
+# Input: list of tags like v1.9.8-cytracon.9
+latest_cytracon_tag() {
+  # version-sort works well for v1.9.8-cytracon.N
+  sort -V | tail -1
+}
+
+# Discover latest cytracon tag via git (no GitHub API)
+fetch_latest_tag() {
+  local tags
+  tags="$(git ls-remote --tags --refs "$GIT_URL" 'refs/tags/v*-cytracon.*' 2>/dev/null \
+    | awk '{print $2}' | sed 's|refs/tags/||' || true)"
+  if [[ -z "$tags" ]]; then
+    # broader pattern (some tags without leading v)
+    tags="$(git ls-remote --tags --refs "$GIT_URL" 2>/dev/null \
+      | awk '{print $2}' | sed 's|refs/tags/||' | grep -E 'cytracon\.[0-9]+$' || true)"
+  fi
+  [[ -n "$tags" ]] || return 1
+  echo "$tags" | latest_cytracon_tag
+}
+
+# Probe whether a release asset exists (public download URL)
+asset_candidates() {
+  local tag="$1"
+  local ver
+  ver="$(normalize_ver "$tag")"
+  # naming from package-tilix.sh
+  echo "tilix-cytracon-${ver}-linux-x86_64.tar.gz"
+  # alternate: dots → underscores (older sanitize)
+  echo "tilix-cytracon-$(echo "$ver" | tr '.' '_')-linux-x86_64.tar.gz"
+}
+
+probe_asset() {
+  local tag="$1"
+  local name url code
+  for name in $(asset_candidates "$tag"); do
+    url="${WEB}/releases/download/${tag}/${name}"
+    code="$(curl -sI -o /dev/null -w '%{http_code}' -L "$url" 2>/dev/null || echo 000)"
+    if [[ "$code" == "200" ]]; then
+      echo "$name|$url"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Walk tags newest-first until one has a release asset
+find_latest_release() {
+  local all tag hit
+  all="$(git ls-remote --tags --refs "$GIT_URL" 'refs/tags/v*-cytracon.*' 2>/dev/null \
+    | awk '{print $2}' | sed 's|refs/tags/||' | sort -V -r || true)"
+  if [[ -z "$all" ]]; then
+    all="$(git ls-remote --tags --refs "$GIT_URL" 2>/dev/null \
+      | awk '{print $2}' | sed 's|refs/tags/||' | grep -E 'cytracon\.[0-9]+$' | sort -V -r || true)"
+  fi
+  [[ -n "$all" ]] || return 1
+  while IFS= read -r tag; do
+    [[ -z "$tag" ]] && continue
+    if hit="$(probe_asset "$tag")"; then
+      echo "${tag}|${hit}"
+      return 0
+    fi
+  done <<< "$all"
+  return 1
 }
 
 install_timer() {
@@ -134,7 +160,6 @@ install_timer() {
   mkdir -p "$unit_dir"
   local self
   self="$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")"
-  # Prefer installed copy
   if [[ -x "$PREFIX/bin/tilix-update" ]]; then
     self="$PREFIX/bin/tilix-update"
   else
@@ -169,9 +194,8 @@ EOF
 
   systemctl --user daemon-reload
   systemctl --user enable --now tilix-update.timer
-  log "Timer enabled (systemd --user). Status:"
+  log "Timer enabled (systemd --user)."
   systemctl --user status tilix-update.timer --no-pager 2>/dev/null | head -12 || true
-  log "Manual: systemctl --user start tilix-update.service"
 }
 
 if [[ "$INSTALL_TIMER" == 1 ]]; then
@@ -180,66 +204,52 @@ if [[ "$INSTALL_TIMER" == 1 ]]; then
 fi
 
 TOKEN=""
-if ! TOKEN="$(resolve_token)"; then
-  TOKEN=""
-fi
-
-if [[ -z "$TOKEN" ]]; then
-  err "Kein GitHub-Token (Repo ist privat)."
-  err "Lege an:  mkdir -p ~/.config/tilix && chmod 700 ~/.config/tilix"
-  err "          echo 'ghp_...' > ~/.config/tilix/github-token && chmod 600 ~/.config/tilix/github-token"
-  err "Token braucht: Contents (Read) auf cytracon/tilix — Fine-grained PAT oder classic 'repo'."
-  exit 2
-fi
+TOKEN="$(resolve_token 2>/dev/null || true)"
 
 CUR="$(normalize_ver "$(installed_version)")"
 log "Installed: ${CUR:-<none>}"
+log "Repo:      ${WEB} (public)"
 
-JSON=""
-ASSET_URL=""
 REL_TAG=""
-REL_NAME=""
+ASSET_NAME=""
+ASSET_URL=""
 
 if [[ -n "$WANT_TAG" ]]; then
-  log "Fetching release tag ${WANT_TAG}…"
-  JSON="$(api_curl "${API}/releases/tags/${WANT_TAG}" "$TOKEN")" \
-    || die "Release ${WANT_TAG} nicht gefunden (oder Token-Rechte)."
+  REL_TAG="$WANT_TAG"
+  [[ "$REL_TAG" == v* ]] || REL_TAG="v${REL_TAG}"
+  log "Requested tag: ${REL_TAG}"
+  if hit="$(probe_asset "$REL_TAG")"; then
+    ASSET_NAME="${hit%%|*}"
+    ASSET_URL="${hit#*|}"
+  else
+    die "No release asset for ${REL_TAG}.
+Publish first:  cd ~/src/tilix && ./scripts/publish-github-release.sh
+Or open: ${WEB}/releases"
+  fi
 else
-  log "Fetching latest release from ${REPO}…"
-  JSON="$(api_curl "${API}/releases/latest" "$TOKEN")" \
-    || die "Kein latest Release (noch nie published?) oder Token-Rechte fehlen."
+  log "Looking for latest release with linux package…"
+  if found="$(find_latest_release)"; then
+    # tag|name|url
+    REL_TAG="${found%%|*}"
+    rest="${found#*|}"
+    ASSET_NAME="${rest%%|*}"
+    ASSET_URL="${rest#*|}"
+  else
+    # Helpful diagnostics
+    latest_tag="$(fetch_latest_tag || true)"
+    die "Kein GitHub Release mit Package gefunden.
+Tags existieren${latest_tag:+ (latest tag: $latest_tag)}, aber noch kein Release-Asset.
+Auf dem Build-PC:
+  cd ~/src/tilix
+  git push origin master --tags
+  ./scripts/publish-github-release.sh
+Danach hier erneut: tilix-update
+Seite: ${WEB}/releases"
+  fi
 fi
-
-# Prefer jq if available, else python3
-if command -v jq >/dev/null 2>&1; then
-  REL_TAG="$(echo "$JSON" | jq -r '.tag_name // empty')"
-  REL_NAME="$(echo "$JSON" | jq -r '.name // empty')"
-  ASSET_URL="$(echo "$JSON" | jq -r '[.assets[] | select(.name | test("linux-x86_64\\.tar\\.gz$")) | .url][0] // empty')"
-  ASSET_NAME="$(echo "$JSON" | jq -r '[.assets[] | select(.name | test("linux-x86_64\\.tar\\.gz$")) | .name][0] // empty')"
-else
-  export TILIX_REL_JSON="$JSON"
-  eval "$(python3 - <<'PY'
-import json, os
-j=json.loads(os.environ["TILIX_REL_JSON"])
-print("REL_TAG=%r" % (j.get("tag_name") or ""))
-print("REL_NAME=%r" % (j.get("name") or ""))
-url=""; name=""
-for a in j.get("assets") or []:
-    n=a.get("name") or ""
-    if n.endswith("linux-x86_64.tar.gz"):
-        url=a.get("url") or ""; name=n; break
-print("ASSET_URL=%r" % url)
-print("ASSET_NAME=%r" % name)
-PY
-)"
-  unset TILIX_REL_JSON
-fi
-
-[[ -n "$REL_TAG" ]] || die "Release ohne tag_name."
-[[ -n "$ASSET_URL" ]] || die "Kein linux-x86_64.tar.gz Asset im Release ${REL_TAG}."
 
 NEW="$(normalize_ver "$REL_TAG")"
-log "Latest:    ${NEW} (${ASSET_NAME})"
+log "Latest:    ${NEW}  (${ASSET_NAME})"
 
 if [[ "$CHECK_ONLY" == 1 ]]; then
   if [[ -n "$CUR" && "$CUR" == "$NEW" ]]; then
@@ -260,45 +270,58 @@ cleanup() { rm -rf "$TMP"; }
 trap cleanup EXIT
 
 TAR="${TMP}/${ASSET_NAME}"
-log "Downloading ${ASSET_NAME}…"
-curl -fsSL \
-  -H "Accept: application/octet-stream" \
-  -H "Authorization: Bearer ${TOKEN}" \
-  -H "X-GitHub-Api-Version: 2022-11-28" \
-  -o "$TAR" \
-  "$ASSET_URL"
+log "Downloading ${ASSET_URL}…"
+# Public browser download — no API, no rate limit
+if ! curl -fsSL -L -o "$TAR" "$ASSET_URL"; then
+  # optional API fallback with token
+  if [[ -n "$TOKEN" ]]; then
+    log "Direct download failed; trying API with token…"
+    api="https://api.github.com/repos/${REPO}/releases/tags/${REL_TAG}"
+    json="$(curl -fsSL \
+      -H "Authorization: Bearer ${TOKEN}" \
+      -H "Accept: application/vnd.github+json" \
+      "$api")" || die "API fallback failed."
+    api_url="$(echo "$json" | python3 -c "
+import json,sys
+j=json.load(sys.stdin)
+for a in j.get('assets') or []:
+  if (a.get('name') or '').endswith('linux-x86_64.tar.gz'):
+    print(a['url']); break
+")"
+    [[ -n "$api_url" ]] || die "No asset in API response."
+    curl -fsSL -L \
+      -H "Authorization: Bearer ${TOKEN}" \
+      -H "Accept: application/octet-stream" \
+      -o "$TAR" "$api_url" || die "Download failed."
+  else
+    die "Download failed (is the release published?). ${WEB}/releases"
+  fi
+fi
 
-# Basic sanity
 [[ -s "$TAR" ]] || die "Download empty."
-file "$TAR" | grep -qi 'gzip\|tar' || die "Download is not a tar.gz (got: $(file -b "$TAR"))"
+file "$TAR" | grep -qi 'gzip\|tar' || die "Not a tar.gz: $(file -b "$TAR")"
 
 log "Extracting…"
 tar -xzf "$TAR" -C "$TMP"
-STAGE="$(find "$TMP" -maxdepth 2 -type f -name 'install-remote.sh' -printf '%h\n' | head -1)"
-if [[ -z "$STAGE" ]]; then
-  STAGE="$(find "$TMP" -maxdepth 2 -type f -name 'install-from-package.sh' -printf '%h\n' | head -1)"
-fi
-[[ -n "$STAGE" && -d "$STAGE" ]] || die "Package layout unexpected (no install-remote.sh)."
+STAGE="$(find "$TMP" -maxdepth 2 -type f \( -name 'install-remote.sh' -o -name 'install-from-package.sh' \) -printf '%h\n' | head -1)"
+[[ -n "$STAGE" && -d "$STAGE" ]] || die "Unexpected package layout."
 
-# Prefer install-from-package.sh if present
 if [[ -x "$STAGE/install-from-package.sh" ]]; then
   INSTALLER="$STAGE/install-from-package.sh"
-elif [[ -x "$STAGE/install-remote.sh" ]]; then
-  INSTALLER="$STAGE/install-remote.sh"
 else
-  die "No installer in package."
+  INSTALLER="$STAGE/install-remote.sh"
 fi
 
-# Also drop this updater next to tilix
 install -Dm755 "$0" "$PREFIX/bin/tilix-update" 2>/dev/null || true
 
 log "Installing into ${PREFIX}…"
 PREFIX="$PREFIX" bash "$INSTALLER"
 
-# Re-copy updater from package if shipped
 if [[ -x "$STAGE/bin/tilix-update" ]]; then
   install -Dm755 "$STAGE/bin/tilix-update" "$PREFIX/bin/tilix-update"
 fi
+# Always keep this (newest) updater
+install -Dm755 "$0" "$PREFIX/bin/tilix-update" 2>/dev/null || true
 
 NEW_INST="$(normalize_ver "$(installed_version)")"
 log "Now running: ${NEW_INST:-?}"
