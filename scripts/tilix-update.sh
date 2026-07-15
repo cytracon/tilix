@@ -99,9 +99,23 @@ install_self() {
     fi
   fi
   if [[ -n "$src" && -f "$src" && -r "$src" ]]; then
-    cp -f "$src" "$PREFIX/bin/install-tilix-cytracon"
-    cp -f "$src" "$PREFIX/bin/tilix-update"
-    chmod 755 "$PREFIX/bin/install-tilix-cytracon" "$PREFIX/bin/tilix-update"
+    local dest1="$PREFIX/bin/install-tilix-cytracon"
+    local dest2="$PREFIX/bin/tilix-update"
+    # Avoid "same file" when already running from dest
+    if [[ "$(readlink -f "$src" 2>/dev/null || realpath "$src" 2>/dev/null || echo "$src")" != \
+          "$(readlink -f "$dest1" 2>/dev/null || echo "$dest1")" ]]; then
+      cp -f "$src" "$dest1"
+    fi
+    if [[ "$(readlink -f "$src" 2>/dev/null || realpath "$src" 2>/dev/null || echo "$src")" != \
+          "$(readlink -f "$dest2" 2>/dev/null || echo "$dest2")" ]]; then
+      cp -f "$src" "$dest2"
+    fi
+    # If only one dest was source, still ensure both exist and match
+    if [[ ! -f "$dest1" ]]; then cp -f "$src" "$dest1"; fi
+    if [[ ! -f "$dest2" ]]; then cp -f "$src" "$dest2"; fi
+    if [[ -f "$dest1" && ! -f "$dest2" ]]; then cp -f "$dest1" "$dest2"; fi
+    if [[ -f "$dest2" && ! -f "$dest1" ]]; then cp -f "$dest2" "$dest1"; fi
+    chmod 755 "$dest1" "$dest2" 2>/dev/null || true
   else
     # running via curl|bash — re-fetch self from GitHub (needs push of this file)
     local tmp
@@ -230,12 +244,12 @@ install_from_tarball() {
   file "$tarfile" | grep -qiE 'gzip|tar' || die "Keine tar.gz: $(file -b "$tarfile")"
 
   tmp="$(mktemp -d /tmp/tilix-install.XXXXXX)"
-  # shellcheck disable=SC2064
-  trap "rm -rf '$tmp'" RETURN
-
   tar -xzf "$tarfile" -C "$tmp"
   stage="$(find "$tmp" -maxdepth 2 -type f \( -name install-from-package.sh -o -name install-remote.sh \) -printf '%h\n' | head -1)"
-  [[ -n "$stage" ]] || die "Ungültiges Package (kein install-*.sh)."
+  if [[ -z "$stage" ]]; then
+    rm -rf "$tmp"
+    die "Ungültiges Package (kein install-*.sh)."
+  fi
 
   if [[ -x "$stage/install-from-package.sh" ]]; then
     installer="$stage/install-from-package.sh"
@@ -245,6 +259,7 @@ install_from_tarball() {
 
   log "Installiere nach ${PREFIX}…"
   PREFIX="$PREFIX" bash "$installer"
+  rm -rf "$tmp"
 }
 
 # ---------------------------------------------------------------------------
