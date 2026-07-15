@@ -435,8 +435,8 @@ REMOTE
 
   # also drop into Downloads / Drive for other PCs
   # Optional extra copy dirs (colon-separated), e.g. TILIX_DIST_DIRS="$HOME/Downloads"
-  local d
-  for d in "$HOME/Downloads" ${TILIX_DIST_DIRS//:/ }; do
+  local d dist_extra="${TILIX_DIST_DIRS:-}"
+  for d in "$HOME/Downloads" ${dist_extra//:/ }; do
     [[ -n "$d" && -d "$d" ]] || continue
     cp -f "$tar" "$d/"
     me="$(self_path)"; [[ -n "$me" && -f "$me" ]] && cp -f "$me" "$d/tilix-cytracon.sh"
