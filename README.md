@@ -5,7 +5,7 @@
 
 **Repository:** https://github.com/cytracon/tilix  
 **Upstream:** https://github.com/gnunn1/tilix (minimal maintenance; [maintainers wanted](https://github.com/gnunn1/tilix/issues/1700))  
-**Current version:** **1.9.8-cytracon.4**
+**Current version:** **1.9.8-cytracon.9**
 
 Tiling terminal emulator for Linux (GTK 3 + VTE), forked for **Cytracon ops / Magento / AI workflows**. Upstream Tilix features remain; this fork adds security fixes, header-bar productivity tools, and file-manager integration for **Nemo** (and Nautilus).
 
@@ -67,34 +67,65 @@ Nemo does **not** load Nautilus Python extensions. Use the Nemo installer below.
 
 ---
 
-## Quick install (user prefix, Ubuntu / desktop)
+## Install & auto-update (all machines)
 
-Assumes a release binary already built (LDC + dub) or use the local Cytracon install layout:
+Repo is **private**. Updates use **GitHub Releases** (prebuilt `linux-x86_64` tarball) — no LDC on laptops.
+
+### 1) One-time token (every PC)
+
+Fine-grained PAT with **Contents: Read** on `cytracon/tilix` (or classic `repo`):
 
 ```bash
-# Binary + wrapper (example layout used on Cytracon desktops)
-#   ~/.local/libexec/tilix   — binary
-#   ~/.local/bin/tilix       — wrapper (PATH + GSettings schema dir)
+mkdir -p ~/.config/tilix && chmod 700 ~/.config/tilix
+echo 'github_pat_…' > ~/.config/tilix/github-token
+chmod 600 ~/.config/tilix/github-token
+```
 
-# GSettings schemas (required for new keys)
+### 2) Update / first install
+
+```bash
+./scripts/tilix-update.sh          # or: tilix-update
+tilix-update --check               # exit 1 = update available
+tilix-update --force               # reinstall latest
+tilix-update --install-timer       # daily systemd --user timer
+```
+
+Install path: `~/.local/libexec/tilix` + wrapper `~/.local/bin/tilix`.  
+After upgrade: fully quit (`pkill -x tilix`) and start again.
+
+### 3) Publish a new version (build machine)
+
+```bash
+./scripts/publish-github-release.sh
+# packages tarball, git push, creates GitHub Release asset
+```
+
+Or push a tag `v1.9.8-cytracon.N` — GitHub Actions builds and releases automatically.
+
+### 4) LAN deploy (optional)
+
+```bash
+./scripts/deploy-tilix-cytracon-home.sh   # package + scp to laptop/multimedia
+```
+
+Details: [docs/AUTO-UPDATE.md](docs/AUTO-UPDATE.md)
+
+Ensure `~/.local/bin` is first on `PATH` so Cytracon wins over distro `/usr/bin/tilix`.
+
+Desktop entry: `~/.local/share/applications/com.gexperts.Tilix.desktop`  
+(Name: **Tilix (Cytracon)**; same app-id so Ubuntu Dock pin keeps working.)
+
+---
+
+## Quick install (from source)
+
+```bash
 install -Dm 644 data/gsettings/com.gexperts.Tilix.gschema.xml \
   ~/.local/share/glib-2.0/schemas/
 glib-compile-schemas ~/.local/share/glib-2.0/schemas/
-
-# Nemo context menu (Open Tilix Here / In Tilix / Remote)
 ./scripts/install-nemo-tilix-actions.sh
-nemo -q && nemo &   # reload Nemo
-
-# Optional: example session layouts (does NOT overwrite bookmarks.json)
 ./scripts/install-cytracon-packs.sh --sessions
 ```
-
-Ensure `~/.local/bin` is first on `PATH` so the Cytracon binary wins over distro `/usr/bin/tilix`.
-
-Desktop entry for Ubuntu Dock: `~/.local/share/applications/com.gexperts.Tilix.desktop`  
-(Name: **Tilix (Cytracon)**; same app-id so the existing pin keeps working.)
-
-**After upgrades:** fully quit Tilix (`pkill -x tilix`) and start again so the dock does not keep a `(deleted)` binary in memory.
 
 ---
 

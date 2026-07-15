@@ -1,0 +1,76 @@
+name: Release Cytracon Package
+
+# Tag push e.g. v1.9.8-cytracon.10 → build + GitHub Release with tarball
+on:
+  push:
+    tags:
+      - 'v*-cytracon.*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & publish package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -yq --no-install-recommends \
+            libgtk-3-dev libvte-2.91-dev libsecret-1-dev \
+            libgtksourceview-3.0-dev librsvg2-dev \
+            libglib2.0-dev libpango1.0-dev libcairo2-dev \
+            libatk1.0-dev libpeas-dev \
+            desktop-file-utils gettext file
+
+      - name: Install LDC
+        uses: dlang-community/setup-dlang@v2
+        with:
+          compiler: ldc-latest
+
+      - name: Build release binary
+        run: |
+          dub build --compiler=ldc2 --build=release
+          file ./tilix
+          ./tilix --version | head -5
+
+      - name: Package
+        id: pkg
+        run: |
+          set -euo pipefail
+          chmod +x scripts/*.sh
+          TAR="$(PKG_DIR="$PWD" TILIX_BIN="$PWD/tilix" ./scripts/package-tilix.sh | tail -1)"
+          VERSION="$(./tilix --version 2>/dev/null | sed -n 's/.*Tilix version:[[:space:]]*//p' | head -1 | tr -d '[:space:]')"
+          VERSION="${VERSION:-${GITHUB_REF_NAME#v}}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tar=$(basename "$TAR")" >> "$GITHUB_OUTPUT"
+          ls -lh "$TAR"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Tilix ${{ steps.pkg.outputs.version }}
+          generate_release_notes: true
+          files: ${{ steps.pkg.outputs.tar }}
+          body: |
+            ## Cytracon Tilix ${{ steps.pkg.outputs.version }}
+
+            ### Install / update (any machine)
+            ```bash
+            # one-time token (private repo): contents:read on cytracon/tilix
+            mkdir -p ~/.config/tilix && chmod 700 ~/.config/tilix
+            # paste fine-grained PAT:
+            #   nano ~/.config/tilix/github-token && chmod 600 ~/.config/tilix/github-token
+
+            # first time (from clone) or after install:
+            ~/.local/bin/tilix-update   # or: ./scripts/tilix-update.sh
+            ```
+
+            Installs into `~/.local` (no root). Then fully quit Tilix and start again.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
