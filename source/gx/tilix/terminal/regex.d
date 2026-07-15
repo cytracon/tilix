@@ -159,7 +159,7 @@ enum REGEX_NEWS_MAN = "(?i:news:|man:|info:)[-[:alnum:]\\Q^_{|}~!\"#$%&'()*+,./;
  * is also the full match). Token $n therefore maps to matches[n + 1].
  * Replacement runs from high index to low so $10 is not corrupted by $1.
  */
-string replaceMatchTokens(string tokenizedText, string[] matches) {
+@safe string replaceMatchTokens(string tokenizedText, string[] matches) {
     string result = tokenizedText;
     if (matches.length == 0) {
         return result;

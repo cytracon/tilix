@@ -12,7 +12,7 @@ jobs:
     name: Debian Stable
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@v4
 
     - name: Create Build Environment
       run: cd .github/ci/ && podman build -t tilix -f ./Dockerfile-debian-stable .
@@ -30,7 +30,7 @@ jobs:
     name: Debian Testing
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@v4
 
     - name: Create Build Environment
       run: cd .github/ci/ && podman build -t tilix -f ./Dockerfile-debian-testing .
@@ -48,7 +48,7 @@ jobs:
     name: Ubuntu LTS
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@v4
 
     - name: Create Build Environment
       run: cd .github/ci/ && podman build -t tilix -f ./Dockerfile-ubuntu-noble .
@@ -67,9 +67,11 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
         matrix:
-          dc: [dmd-latest, ldc-latest]
+          # dmd-latest (2.112+) breaks gtk-d 3.11 (_d_toObject conflict in std.signals)
+          # Pin DMD; LDC latest remains the primary release compiler for Cytracon.
+          dc: [dmd-2.109.1, ldc-latest]
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@v4
 
     - name: Install System Dependencies
       run: |
@@ -93,7 +95,7 @@ jobs:
         compiler: ${{ matrix.dc }}
 
     - name: Build
-      run: dub build --compiler=$DC
+      run: dub build --compiler=$DC --build=release
 
     - name: Test
       run: dub test --compiler=$DC
