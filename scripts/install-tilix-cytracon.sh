@@ -262,6 +262,47 @@ install_from_tarball() {
   rm -rf "$tmp"
 }
 
+# Newest local package in common places (Drive sync / Downloads /tmp)
+find_local_package() {
+  local -a roots=()
+  local f best="" best_mtime=0 mt
+  roots+=(
+    "${HOME}/Downloads"
+    "${HOME}/download"
+    "${HOME}/Google Drive/BBachmann/Downloads"
+    "${HOME}/Google Drive/Meine Ablage/BBachmann/Downloads"
+    "/tmp"
+    "${HOME}/src/tilix"
+  )
+  # script directory
+  if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
+    roots+=("$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || true)")
+  fi
+  # XDG
+  [[ -n "${XDG_DOWNLOAD_DIR:-}" ]] && roots+=("$XDG_DOWNLOAD_DIR")
+
+  for dir in "${roots[@]}"; do
+    [[ -d "$dir" ]] || continue
+    # shellcheck disable=SC2044
+    while IFS= read -r -d '' f; do
+      mt=$(stat -c %Y "$f" 2>/dev/null || echo 0)
+      if (( mt >= best_mtime )); then
+        best_mtime=$mt
+        best="$f"
+      fi
+    done < <(find "$dir" -maxdepth 2 -type f -name 'tilix-cytracon-*-linux-x86_64.tar.gz' -print0 2>/dev/null)
+  done
+  [[ -n "$best" ]] || return 1
+  echo "$best"
+}
+
+finish_local() {
+  if [[ -f "${BASH_SOURCE[0]:-}" ]]; then install_self "${BASH_SOURCE[0]}"; else install_self ""; fi
+  ok "Fertig. Version: $(installed_version)"
+  [[ "$DO_TIMER" == 1 ]] && install_timer
+  log "Tilix komplett beenden und neu starten:  pkill -x tilix"
+}
+
 # ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
@@ -292,25 +333,45 @@ fi
 if [[ -n "${TILIX_TARBALL:-}" ]]; then
   log "Nutze lokales Package: $TILIX_TARBALL"
   install_from_tarball "$TILIX_TARBALL"
-  if [[ -f "${BASH_SOURCE[0]:-}" ]]; then install_self "${BASH_SOURCE[0]}"; else install_self ""; fi
-  ok "Fertig (lokal). Version: $(installed_version)"
-  [[ "$DO_TIMER" == 1 ]] && install_timer
-  log "Tilix komplett beenden und neu starten:  pkill -x tilix"
+  finish_local
   exit 0
 fi
 
 log "Suche GitHub Release auf ${WEB} …"
 FOUND=""
 if ! FOUND="$(find_release)"; then
-  err "Kein Release-Package gefunden."
+  log "Kein GitHub-Release — suche lokales Package (Downloads / Drive /tmp)…"
+  LOCAL_PKG=""
+  if LOCAL_PKG="$(find_local_package)"; then
+    log "Gefunden: $LOCAL_PKG"
+    if [[ "$CHECK_ONLY" == 1 ]]; then
+      log "Lokales Package vorhanden (GitHub-Release fehlt noch)."
+      exit 1
+    fi
+    # If already on cytracon.9 and package is same version-ish, skip unless --force
+    if [[ "$FORCE" != 1 && -n "$CUR" ]]; then
+      base="$(basename "$LOCAL_PKG")"
+      if [[ "$base" == *"${CUR}"* ]]; then
+        ok "Bereits auf $CUR (lokales Package $base). --force erzwingt Neuinstallation."
+        finish_local
+        exit 0
+      fi
+    fi
+    install_from_tarball "$LOCAL_PKG"
+    finish_local
+    exit 0
+  fi
+  err "Kein Release-Package und kein lokales Tarball gefunden."
   err ""
-  err "Auf dem Build-PC einmal veröffentlichen:"
-  err "  cd ~/src/tilix"
-  err "  git push origin master --tags"
-  err "  ./scripts/publish-github-release.sh"
+  err "Option A — Package aus Drive nutzen:"
+  err "  # Dateien nach ~/Downloads legen:"
+  err "  #   install-tilix-cytracon.sh"
+  err "  #   tilix-cytracon-*-linux-x86_64.tar.gz"
+  err "  bash ~/Downloads/install-tilix-cytracon.sh"
   err ""
-  err "Oder offline mit vorhandenem Tarball:"
-  err "  TILIX_TARBALL=/pfad/tilix-cytracon-….tar.gz bash $0"
+  err "Option B — GitHub Release (Build-PC, einmalig):"
+  err "  cd ~/src/tilix && git push origin master --tags"
+  err "  GITHUB_TOKEN=… ./scripts/publish-github-release.sh"
   err ""
   err "Releases: ${WEB}/releases"
   exit 2
