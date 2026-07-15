@@ -253,12 +253,34 @@ EOF
 # =============================================================================
 # Package (embeds THIS script as updater + inline installer)
 # =============================================================================
+# Version without requiring a display (CI has no X11)
+detect_binary_version() {
+  local bin="$1" ver=""
+  # Prefer strings (works headless); --version may abort without DISPLAY
+  if command -v strings >/dev/null 2>&1; then
+    ver="$(strings "$bin" 2>/dev/null | grep -oE '1\.[0-9]+\.[0-9]+-cytracon\.[0-9]+' | head -1 || true)"
+  fi
+  if [[ -z "$ver" ]]; then
+    ver="$(DISPLAY= timeout 3 "$bin" --version 2>/dev/null \
+      | sed -n 's/.*Tilix version:[[:space:]]*//p' | head -1 | tr -d '[:space:]' || true)"
+  fi
+  if [[ -z "$ver" ]]; then
+    local r; r="$(repo_root)"
+    if [[ -n "$r" && -f "$r/source/gx/tilix/constants.d" ]]; then
+      ver="$(sed -n 's/.*APPLICATION_VERSION = "\([^"]*\)".*/\1/p' "$r/source/gx/tilix/constants.d" | head -1)"
+    fi
+  fi
+  if [[ -z "$ver" && -n "${GITHUB_REF_NAME:-}" ]]; then
+    ver="${GITHUB_REF_NAME#v}"
+  fi
+  echo "${ver:-unknown}"
+}
+
 cmd_package() {
   need file; need tar
   local bin version ver_file tar stage
   bin="$(resolve_binary)" || die "Kein Tilix-Binary. Bauen: dub build --compiler=ldc2 --build=release"
-  version="$("$bin" --version 2>/dev/null | sed -n 's/.*Tilix version:[[:space:]]*//p' | head -1 | tr -d '[:space:]')"
-  version="${version:-unknown}"
+  version="$(detect_binary_version "$bin")"
   ver_file="$(echo "$version" | tr -c 'A-Za-z0-9._-' '_' | sed 's/_\+$//')"
   tar="${PKG_DIR}/tilix-cytracon-${ver_file}-linux-x86_64.tar.gz"
   stage="${PKG_DIR}/${STAGE_NAME}"

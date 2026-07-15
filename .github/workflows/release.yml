@@ -36,15 +36,26 @@ jobs:
         run: |
           dub build --compiler=ldc2 --build=release
           file ./tilix
-          ./tilix --version | head -5
+          # headless: do not run GUI binary without display
+          strings ./tilix | grep -oE '1\.[0-9.]+-cytracon\.[0-9]+' | head -1
 
       - name: Package
         id: pkg
         run: |
           set -euo pipefail
           chmod +x scripts/*.sh
-          TAR="$(PKG_DIR="$PWD" TILIX_BIN="$PWD/tilix" ./scripts/package-tilix.sh | tail -1)"
-          VERSION="$(./tilix --version 2>/dev/null | sed -n 's/.*Tilix version:[[:space:]]*//p' | head -1 | tr -d '[:space:]')"
+          # stream logs to stderr; only final path on stdout for capture
+          TAR="$(PKG_DIR="$PWD" TILIX_BIN="$PWD/tilix" ./scripts/package-tilix.sh 2> >(tee /dev/stderr) | tail -1)"
+          # package-tilix is a thin wrapper; if empty, use latest.pkgpath
+          if [[ -z "${TAR}" || ! -f "${TAR}" ]]; then
+            if [[ -f "${PWD}/tilix-cytracon-latest.pkgpath" ]]; then
+              TAR="$(cat "${PWD}/tilix-cytracon-latest.pkgpath")"
+            else
+              TAR="$(ls -1t "${PWD}"/tilix-cytracon-*-linux-x86_64.tar.gz 2>/dev/null | head -1 || true)"
+            fi
+          fi
+          [[ -n "${TAR}" && -f "${TAR}" ]] || { echo "Package failed"; exit 1; }
+          VERSION="$(strings ./tilix | grep -oE '1\.[0-9.]+-cytracon\.[0-9]+' | head -1 || true)"
           VERSION="${VERSION:-${GITHUB_REF_NAME#v}}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tar=$(basename "$TAR")" >> "$GITHUB_OUTPUT"
