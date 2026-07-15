@@ -4,7 +4,7 @@
 #
 #   install / update / package / publish / timer / help
 #
-# Auf JEDEM PC (kein LDC, kein Root):
+# Auf JEDEM PC (kein LDC, KEIN sudo/root):
 #   bash tilix-cytracon.sh              # install/update (GitHub oder lokal)
 #   tilix-update                        # gleicher Befehl nach Install
 #   tilix-cytracon --timer              # täglicher Auto-Update
@@ -12,6 +12,13 @@
 #   tilix-cytracon --force
 #   tilix-cytracon dock                 # Ubuntu-Dock/Desktop-Entry (ohne Kill!)
 #   tilix-cytracon dock --kill          # + laufende Tilix-Prozesse beenden (optional)
+#
+# Google Drive / noexec-Mount (Multimedia):
+#   NICHT:  sudo ./tilix-cytracon.sh     # ← Permission denied + falscher Owner
+#   SONDERN:
+#     bash "/home/bbachmann/Google Drive/BBachmann/Downloads/tilix-cytracon.sh"
+#   oder:
+#     cp .../tilix-cytracon.sh /tmp/ && bash /tmp/tilix-cytracon.sh
 #
 # Ohne Clone:
 #   curl -fsSL https://raw.githubusercontent.com/cytracon/tilix/master/scripts/tilix-cytracon.sh | bash

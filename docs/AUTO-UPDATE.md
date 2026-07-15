@@ -61,12 +61,10 @@ git push origin master --tags
 ### B) Andere PCs (einmalig)
 
 ```bash
-mkdir -p ~/.config/tilix && chmod 700 ~/.config/tilix
-echo 'TOKEN' > ~/.config/tilix/github-token && chmod 600 ~/.config/tilix/github-token
-
-# Updater aus Clone oder per scp:
+# Updater aus Clone / Drive / nach erstem Install:
 ./scripts/tilix-update.sh
 ./scripts/tilix-update.sh --install-timer   # täglich
+# kein Token nötig (public repo)
 ```
 
 ### C) Täglich automatisch
@@ -88,7 +86,7 @@ Wenn Laptops offline / kein Token:
 
 | Symptom | Fix |
 |---------|-----|
-| `403` / kein latest Release | Token fehlt oder Contents:Read; Release noch nie published |
+| `403` / rate limit | kurz warten oder optional Token setzen; Release noch nie published |
 | Nach Update alte Version | `pkill -x tilix` und neu starten (Dock hält alten Inode) |
 | `tilix` ist Distro-Binary | `~/.local/bin` vor `/usr/bin` in `PATH` |
 | CI Build fail | LDC/gtk deps — lokal `publish-github-release.sh` nutzen |

@@ -4,7 +4,7 @@
 #
 #   install / update / package / publish / timer / help
 #
-# Auf JEDEM PC (kein LDC, kein Root):
+# Auf JEDEM PC (kein LDC, KEIN sudo/root):
 #   bash tilix-cytracon.sh              # install/update (GitHub oder lokal)
 #   tilix-update                        # gleicher Befehl nach Install
 #   tilix-cytracon --timer              # täglicher Auto-Update
@@ -12,6 +12,13 @@
 #   tilix-cytracon --force
 #   tilix-cytracon dock                 # Ubuntu-Dock/Desktop-Entry (ohne Kill!)
 #   tilix-cytracon dock --kill          # + laufende Tilix-Prozesse beenden (optional)
+#
+# Google Drive / noexec-Mount (Multimedia):
+#   NICHT:  sudo ./tilix-cytracon.sh     # ← Permission denied + falscher Owner
+#   SONDERN:
+#     bash "/home/bbachmann/Google Drive/BBachmann/Downloads/tilix-cytracon.sh"
+#   oder:
+#     cp .../tilix-cytracon.sh /tmp/ && bash /tmp/tilix-cytracon.sh
 #
 # Ohne Clone:
 #   curl -fsSL https://raw.githubusercontent.com/cytracon/tilix/master/scripts/tilix-cytracon.sh | bash
@@ -42,6 +49,7 @@ CMD="update"
 CHECK_ONLY=0
 FORCE=0
 DO_TIMER=0
+DO_KILL=0
 WANT_TAG=""
 SKIP_PUSH=0
 DRY=0
@@ -60,6 +68,7 @@ while [[ $# -gt 0 ]]; do
     --force) FORCE=1; shift ;;
     --timer|--install-timer) DO_TIMER=1; shift ;;
     --dock) CMD=dock; shift ;;
+    --kill) DO_KILL=1; shift ;;
     --tag) WANT_TAG="${2:-}"; shift 2 ;;
     --tag=*) WANT_TAG="${1#--tag=}"; shift ;;
     --skip-push) SKIP_PUSH=1; shift ;;
@@ -620,8 +629,12 @@ install_from_tarball() {
 # in memory (e.g. cytracon.8) and the dock only focuses that window.
 # =============================================================================
 kill_old_tilix() {
-  # ONLY pkill -x (never pkill -f with paths — would kill this script)
-  local pid
+  # ONLY when user explicitly asks (dock --kill). Never during normal update/check.
+  # ONLY pkill -x (never pkill -f with paths — would kill this script / parent shell).
+  local pid n
+  n="$(pgrep -x tilix 2>/dev/null | wc -l | tr -d ' ')"
+  [[ "${n:-0}" == "0" ]] && { log "Keine laufenden tilix-Prozesse."; return 0; }
+  log "Beende $n Tilix-Prozess(e) (explizit angefordert)…"
   pkill -x tilix 2>/dev/null || true
   sleep 0.3
   for pid in $(pgrep -x tilix 2>/dev/null || true); do
@@ -708,6 +721,11 @@ ensure_dock_favorite() {
 }
 
 fix_ubuntu_dock() {
+  # Default: NEVER kill running Tilix (would crash user's open sessions).
+  # Optional: fix_ubuntu_dock --kill
+  local do_kill=0
+  [[ "${1:-}" == "--kill" ]] && do_kill=1
+
   log "Ubuntu-Dock / Desktop-Entry…"
   if [[ ! -x "$PREFIX/libexec/tilix" ]]; then
     die "Kein Binary unter $PREFIX/libexec/tilix — zuerst: tilix-update"
@@ -718,24 +736,26 @@ fix_ubuntu_dock() {
   install_self "$(self_path)"
   ensure_dock_favorite
 
-  local ver before after
+  local ver n
   ver="$(normalize_ver "$(installed_version)")"
-  before="$(pgrep -x tilix 2>/dev/null | wc -l | tr -d ' ')"
-  if [[ "${1:-}" != "--no-kill" ]]; then
-    log "Beende alte Tilix-Instanzen (Dock hält sonst gelöschte v8 im Speicher)…"
-    kill_old_tilix
-  fi
-  after="$(pgrep -x tilix 2>/dev/null | wc -l | tr -d ' ')"
+  n="$(pgrep -x tilix 2>/dev/null | wc -l | tr -d ' ')"
   ok "Desktop: $PREFIX/share/applications/com.gexperts.Tilix.desktop"
   ok "Wrapper: $PREFIX/bin/tilix → $PREFIX/libexec/tilix"
   ok "Version: ${ver:-?}"
-  if [[ "${1:-}" != "--no-kill" ]]; then
-    log "Alte Prozesse: ${before} → ${after}. Dock-Icon erneut klicken → startet ${ver}."
+
+  if [[ "$do_kill" == 1 ]]; then
+    kill_old_tilix
+    log "Dock-Icon erneut klicken → startet ${ver}."
+  else
+    if [[ "${n:-0}" != "0" ]]; then
+      log "Laufende Tilix-Fenster ($n) bleiben offen (kein Kill)."
+      log "Neue Version aktiv nach manuellem Neustart: Fenster schließen oder: tilix-cytracon dock --kill"
+    fi
   fi
 }
 
 post_install_finish() {
-  # Always refresh dock/desktop after install/update
+  # Desktop/wrapper only — never kill open sessions
   fix_ubuntu_dock
   [[ "$DO_TIMER" == 1 ]] && install_timer
   ok "Fertig. Version: $(installed_version)"
@@ -834,7 +854,11 @@ case "$CMD" in
   help) usage; exit 0 ;;
   package) cmd_package; exit 0 ;;
   publish) cmd_publish ;;
-  dock) fix_ubuntu_dock ;;
+  dock)
+    if [[ "$DO_KILL" == 1 ]]; then fix_ubuntu_dock --kill
+    else fix_ubuntu_dock
+    fi
+    ;;
   update|install) cmd_update ;;
   *) die "Unbekannter Befehl: $CMD" ;;
 esac

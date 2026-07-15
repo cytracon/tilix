@@ -5,11 +5,15 @@
 
 **Repository:** https://github.com/cytracon/tilix  
 **Upstream:** https://github.com/gnunn1/tilix (minimal maintenance; [maintainers wanted](https://github.com/gnunn1/tilix/issues/1700))  
-**Current version:** **1.9.8-cytracon.9**
+**Current version:** **1.9.8-cytracon.9**  
+**Install script:** [`scripts/tilix-cytracon.sh`](scripts/tilix-cytracon.sh) (install · update · package · publish · dock)
 
 Tiling terminal emulator for Linux (GTK 3 + VTE), forked for **Cytracon ops / Magento / AI workflows**. Upstream Tilix features remain; this fork adds security fixes, header-bar productivity tools, and file-manager integration for **Nemo** (and Nautilus).
 
 Original project site: [tilix-web](https://gnunn1.github.io/tilix-web).
+
+> **Release rule:** Bei jeder neuen Version immer mit anpassen:  
+> `source/gx/tilix/constants.d` · `docs/CYTRACON-CHANGELOG.md` · **`README.md` (diese Datei)** · Tag `v1.9.8-cytracon.N` · `tilix-cytracon package` / `publish`.
 
 ---
 
@@ -19,9 +23,9 @@ Original project site: [tilix-web](https://gnunn1.github.io/tilix-web).
 
 | Control | What it does | Shortcut |
 |---------|----------------|----------|
-| **Bookmarks** | Searchable popover over all bookmarks | `Ctrl+Shift+B` |
-| **AI** | Tools, resume, **unified recent** Grok/Codex sessions | `Ctrl+Shift+A` |
-| **Ops** | Shops, server/cache/status quick actions, ops layout, session log | `Ctrl+Shift+Q` |
+| **Bookmarks** | Searchable popover, **accordion by theme** | `Ctrl+Shift+B` |
+| **AI** | Tools + **Grok / Codex** recent sessions (accordion) | `Ctrl+Shift+A` |
+| **Ops** | Shops, server/cache/status, ops layout, session log | `Ctrl+Shift+Q` |
 
 ### Preferences (fully configurable)
 
@@ -46,7 +50,9 @@ Empty shops/quick-actions lists load Cytracon defaults (VPS, Fail2ban, Magento s
 | Safer paste heuristics | Beyond `sudo`+newline |
 | Trigger / custom-link shell confirm | Default **on** |
 | Password insert | Never synced to other panes; optional remote warning |
-| AI resume listing | Works when launched from Ubuntu Dock (PATH + FS fallback) |
+| AI resume by `kind` | Grok sessions never open under Codex |
+| Bookmark / menu buttons | Correct per-row command (D loop-capture fix) |
+| Ubuntu Dock | Install script writes Cytracon `.desktop` + wrapper (same app-id pin) |
 | Bookmarks install safety | Pack scripts **never** overwrite `bookmarks.json` (symlink-safe) |
 
 ### File manager integration
@@ -63,52 +69,97 @@ Nemo does **not** load Nautilus Python extensions. Use the Nemo installer below.
 - Copy scrollback to clipboard: `Ctrl+Shift+O`
 - Copy scrollback to session-log directory (Ops menu)
 - Example packs: `data/cytracon/` (bookmarks example, ops session layout)
-- Docs: [Audit](docs/CYTRACON-AUDIT-2026-07-14.md) · [Changelog](docs/CYTRACON-CHANGELOG.md)
+- Docs: [Audit](docs/CYTRACON-AUDIT-2026-07-14.md) · [Changelog](docs/CYTRACON-CHANGELOG.md) · [Auto-Update](docs/AUTO-UPDATE.md)
 
 ---
 
 ## Install & auto-update (all machines)
 
-Repo is **public**: https://github.com/cytracon/tilix  
-Updates use **GitHub Releases** (prebuilt `linux-x86_64` tarball) — no LDC on laptops, **no token required**.
+| | |
+|--|--|
+| Repo | **public** — https://github.com/cytracon/tilix |
+| Root / sudo | **nie** — installiert nach `~/.local` |
+| Compiler auf Laptops | nicht nötig (vorgefertigtes `linux-x86_64` Package) |
+| Token | nicht nötig für Install/Update (public) |
 
-### One script for everything (`scripts/tilix-cytracon.sh`)
+### One script: `scripts/tilix-cytracon.sh`
+
+Nach Install auch als: `tilix-update` · `tilix-cytracon` · `install-tilix-cytracon` (`~/.local/bin`).
 
 ```bash
-# Jeder PC — install/update (GitHub oder lokales tar.gz in Downloads/Drive):
+# --- Jeder PC: install / update ---
+# Bevorzugt: bash (nicht ./ und NIE sudo)
 bash tilix-cytracon.sh
+
 # danach:
 tilix-update
-tilix-update --check | --force | --timer
-
-# ohne Clone (nach GitHub-Push des Scripts):
-curl -fsSL https://raw.githubusercontent.com/cytracon/tilix/master/scripts/tilix-cytracon.sh | bash
-
-# Build-PC:
-tilix-cytracon package              # tar.gz → /tmp + Downloads + Drive
-GITHUB_TOKEN=ghp_… tilix-cytracon publish   # package + Release
+tilix-update --check
+tilix-update --force
+tilix-update --timer          # optional: täglich (systemd --user)
+tilix-cytracon dock           # Desktop/Dock-Eintrag erneuern (ohne Kill)
+# tilix-cytracon dock --kill  # optional: laufende Tilix-Fenster beenden
 ```
 
-Install path: `~/.local/libexec/tilix` + `~/.local/bin/tilix`.  
-After upgrade: `pkill -x tilix` and restart.
+#### Google Drive / Multimedia (oft `noexec`)
 
+```bash
+# FALSCH:
+#   sudo ./tilix-cytracon.sh          → Permission denied + falscher Owner
+#   ./tilix-cytracon.sh               → oft noexec auf Drive
+
+# RICHTIG:
+bash "/home/bbachmann/Google Drive/BBachmann/Downloads/tilix-cytracon.sh"
+
+# oder:
+cp "/home/bbachmann/Google Drive/BBachmann/Downloads/tilix-cytracon.sh" /tmp/
+cp "/home/bbachmann/Google Drive/BBachmann/Downloads"/tilix-cytracon-*-linux-x86_64.tar.gz /tmp/ 2>/dev/null || true
+bash /tmp/tilix-cytracon.sh
+```
+
+Das Script findet Packages automatisch in `~/Downloads`, Google Drive Downloads und `/tmp`.
+
+#### Ohne lokale Datei (nach Push des Scripts auf GitHub)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/cytracon/tilix/master/scripts/tilix-cytracon.sh | bash
+```
+
+#### Build-PC (neue Version veröffentlichen)
+
+```bash
+cd ~/src/tilix
+# 1) Version bumpen: constants.d + CHANGELOG + README (diese Datei!)
+dub build --compiler=ldc2 --build=release
+install -Dm755 tilix ~/.local/libexec/tilix
+
+tilix-cytracon package              # tar.gz → /tmp + Downloads + Drive
+GITHUB_TOKEN=ghp_… tilix-cytracon publish   # Tag + GitHub Release
+# oder Tag pushen → Actions (.github/workflows/release.yml)
+```
+
+### Was das Install-Script macht
+
+| Schritt | Ziel |
+|---------|------|
+| Binary | `~/.local/libexec/tilix` |
+| Wrapper | `~/.local/bin/tilix` (PATH + GSettings schemas) |
+| Updater | `~/.local/bin/tilix-update` (= `tilix-cytracon`) |
+| **Ubuntu Dock** | `~/.local/share/applications/com.gexperts.Tilix.desktop` (**Tilix (Cytracon)**), gleiche App-ID → Pin bleibt |
+| Schemas | `~/.local/share/glib-2.0/schemas/` + `glib-compile-schemas` |
+| Kill offener Fenster | **nein** (nur `dock --kill` explizit) |
+
+`~/.local/bin` muss vor `/usr/bin` in `PATH` stehen (Distro-Tilix 1.9.6 sonst gewinnt).
+
+Nach Upgrade: Tilix-Fenster **selbst** schließen und neu starten (oder Dock-Icon).  
 Optional LAN: `./scripts/deploy-tilix-cytracon-home.sh`
-
-Ensure `~/.local/bin` is first on `PATH` so Cytracon wins over distro `/usr/bin/tilix`.
-
-Desktop entry: `~/.local/share/applications/com.gexperts.Tilix.desktop`  
-(Name: **Tilix (Cytracon)**; same app-id so Ubuntu Dock pin keeps working.)
 
 ---
 
-## Quick install (from source)
+## Quick extras (from source / packs)
 
 ```bash
-install -Dm 644 data/gsettings/com.gexperts.Tilix.gschema.xml \
-  ~/.local/share/glib-2.0/schemas/
-glib-compile-schemas ~/.local/share/glib-2.0/schemas/
 ./scripts/install-nemo-tilix-actions.sh
-./scripts/install-cytracon-packs.sh --sessions
+./scripts/install-cytracon-packs.sh --sessions   # überschreibt bookmarks.json NICHT
 ```
 
 ---
@@ -118,12 +169,13 @@ glib-compile-schemas ~/.local/share/glib-2.0/schemas/
 Written in [D](https://dlang.org/) + GTK 3 (gtkd). Compilers: **LDC** or **DMD** (not GDC).
 
 ```bash
-# with LDC
-dub build --compiler=ldc2 --build=release
+export PATH="$HOME/.local/opt/ldc2/bin:$PATH"
+export LD_LIBRARY_PATH="$HOME/.local/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export DFLAGS="-L-L$HOME/.local/lib"
 
-# user install (no root)
-./install.sh "$HOME/.local"
-# then add ~/.local/share to XDG_DATA_DIRS and use the GSettings steps above
+dub build --compiler=ldc2 --build=release
+install -Dm755 tilix ~/.local/libexec/tilix
+tilix-cytracon package    # empfohlen statt install.sh für Cytracon-Layout
 ```
 
 Dependencies (see `dub.json`): **gtkd** / **vte** ≥ 3.11.0.
