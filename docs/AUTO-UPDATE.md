@@ -23,16 +23,20 @@ Ziel: **einmal bauen/publishen**, alle Rechner (Desktop, Laptop, Multimedia) hol
 | `scripts/install-from-package.sh` | Installer im Tarball |
 | `.github/workflows/release.yml` | CI: Tag `v*-cytracon.*` → Build + Release |
 
-## Token (privat Repo)
+## Sichtbarkeit
+
+Repo ist **öffentlich**: https://github.com/cytracon/tilix  
+→ `tilix-update` braucht **keinen Token**.
+
+Optional Token nur gegen API-Rate-Limits (60/h unauth) bzw. zum **Publishen**:
 
 | Ort | Verwendung |
 |-----|------------|
-| `~/.config/tilix/github-token` | **empfohlen** auf jedem PC (chmod 600) |
+| `~/.config/tilix/github-token` | optional (chmod 600) |
 | `$GITHUB_TOKEN` / `$GH_TOKEN` | Env override |
 | `/root/.github-token` | Fallback Desktop/Server |
 
-**Update** (read): Fine-grained → Repository `cytracon/tilix` → Contents: **Read**  
-**Publish** (write): Contents: **Read and write** (oder classic `repo`)
+**Publish** (write): Contents: **Read and write** (oder classic `repo` / `gh` login)
 
 ## Workflow
 

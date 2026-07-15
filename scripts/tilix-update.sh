@@ -3,13 +3,14 @@
 # tilix-update.sh — keep Cytracon Tilix current from GitHub Releases
 #
 # Works on every machine (desktop, laptop, multimedia) without building.
-# Repo is private → needs a GitHub PAT with `contents: read` (or classic repo).
+# Repo is PUBLIC (https://github.com/cytracon/tilix) — no token required for updates.
+# Optional token still helps avoid GitHub API rate limits (60/h unauthenticated).
 #
-# Token lookup order:
+# Optional token lookup:
 #   1) $GITHUB_TOKEN / $GH_TOKEN
 #   2) ~/.config/tilix/github-token
-#   3) ~/.config/gh/hosts.yml (gh auth token, if present)
-#   4) /root/.github-token (server/desktop convenience)
+#   3) ~/.config/gh/hosts.yml
+#   4) /root/.github-token
 #
 # Usage:
 #   tilix-update                 # install latest if newer

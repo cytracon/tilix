@@ -62,13 +62,10 @@ jobs:
 
             ### Install / update (any machine)
             ```bash
-            # one-time token (private repo): contents:read on cytracon/tilix
-            mkdir -p ~/.config/tilix && chmod 700 ~/.config/tilix
-            # paste fine-grained PAT:
-            #   nano ~/.config/tilix/github-token && chmod 600 ~/.config/tilix/github-token
-
-            # first time (from clone) or after install:
-            ~/.local/bin/tilix-update   # or: ./scripts/tilix-update.sh
+            # public repo — no token required
+            ./scripts/tilix-update.sh
+            # or after install:  tilix-update
+            tilix-update --install-timer   # optional daily update
             ```
 
             Installs into `~/.local` (no root). Then fully quit Tilix and start again.

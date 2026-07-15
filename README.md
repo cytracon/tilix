@@ -69,19 +69,10 @@ Nemo does **not** load Nautilus Python extensions. Use the Nemo installer below.
 
 ## Install & auto-update (all machines)
 
-Repo is **private**. Updates use **GitHub Releases** (prebuilt `linux-x86_64` tarball) — no LDC on laptops.
+Repo is **public**: https://github.com/cytracon/tilix  
+Updates use **GitHub Releases** (prebuilt `linux-x86_64` tarball) — no LDC on laptops, **no token required**.
 
-### 1) One-time token (every PC)
-
-Fine-grained PAT with **Contents: Read** on `cytracon/tilix` (or classic `repo`):
-
-```bash
-mkdir -p ~/.config/tilix && chmod 700 ~/.config/tilix
-echo 'github_pat_…' > ~/.config/tilix/github-token
-chmod 600 ~/.config/tilix/github-token
-```
-
-### 2) Update / first install
+### Update / first install
 
 ```bash
 ./scripts/tilix-update.sh          # or: tilix-update
@@ -90,19 +81,19 @@ tilix-update --force               # reinstall latest
 tilix-update --install-timer       # daily systemd --user timer
 ```
 
+Optional: `~/.config/tilix/github-token` only if you hit API rate limits.
+
 Install path: `~/.local/libexec/tilix` + wrapper `~/.local/bin/tilix`.  
 After upgrade: fully quit (`pkill -x tilix`) and start again.
 
-### 3) Publish a new version (build machine)
+### Publish a new version (build machine)
 
 ```bash
-./scripts/publish-github-release.sh
-# packages tarball, git push, creates GitHub Release asset
+./scripts/publish-github-release.sh   # needs write token / logged-in git
+# or push tag v1.9.8-cytracon.N → GitHub Actions builds the release
 ```
 
-Or push a tag `v1.9.8-cytracon.N` — GitHub Actions builds and releases automatically.
-
-### 4) LAN deploy (optional)
+### LAN deploy (optional)
 
 ```bash
 ./scripts/deploy-tilix-cytracon-home.sh   # package + scp to laptop/multimedia
