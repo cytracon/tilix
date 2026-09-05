@@ -75,7 +75,7 @@ uuid = subprocess.check_output(
     ["gsettings", "get", "com.gexperts.Tilix.ProfilesList", "default"],
     text=True,
 ).strip().strip("'\"")
-if not uuid or uuid.startswith("{@"):
+if not uuid or uuid.startswith("@"):
     sys.exit(0)
 base = f"com.gexperts.Tilix.Profile:/com/gexperts/Tilix/profiles/{uuid}/"
 gs("set", base, "use-theme-colors", "false")
