@@ -1,0 +1,128 @@
+#!/bin/bash
+# omarchy:group=install
+# omarchy:name=tilix
+# omarchy:summary=Install Cytracon Tilix and set it as the default Omarchy terminal (Super+Return).
+# omarchy:examples=omarchy install tilix | omarchy install terminal tilix
+# omarchy:aliases=omarchy install terminal tilix
+
+# User-local. No sudo. Does not touch /usr/share/omarchy.
+
+set -euo pipefail
+
+PREFIX="${TILIX_PREFIX:-$HOME/.local}"
+REPO="${TILIX_REPO:-cytracon/tilix}"
+RAW_UPDATER="https://raw.githubusercontent.com/${REPO}/master/scripts/tilix-cytracon.sh"
+WEB="https://github.com/${REPO}"
+
+log() { printf '\033[36m[tilix]\033[0m %s\n' "$*"; }
+ok()  { printf '\033[32m[tilix]\033[0m %s\n' "$*"; }
+err() { printf '\033[31m[tilix]\033[0m %s\n' "$*" >&2; }
+die() { err "$*"; exit 2; }
+
+HERE="$(cd "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+find_updater() {
+  local f
+  for f in \
+    "${PREFIX}/bin/tilix-cytracon" \
+    "${PREFIX}/bin/tilix-update" \
+    "${HERE}/tilix-cytracon.sh" \
+    "${HERE}/tilix-update.sh"
+  do
+    [[ -f "$f" ]] && { echo "$f"; return 0; }
+  done
+  return 1
+}
+
+ensure_updater() {
+  local src dest tmp
+  dest="${PREFIX}/bin/tilix-cytracon"
+  mkdir -p "${PREFIX}/bin"
+  if src="$(find_updater)"; then
+    if [[ "$(readlink -f "$src")" != "$(readlink -f "$dest" 2>/dev/null || true)" ]]; then
+      cp -f "$src" "$dest"
+      chmod 755 "$dest"
+    fi
+  else
+    tmp="$(mktemp)"
+    log "Lade Installer von GitHub…"
+    curl -fsSL "$RAW_UPDATER" -o "$tmp" || { rm -f "$tmp"; die "Download fehlgeschlagen: $RAW_UPDATER"; }
+    chmod 755 "$tmp"
+    cp -f "$tmp" "$dest"
+    rm -f "$tmp"
+  fi
+  cp -f "$dest" "${PREFIX}/bin/tilix-update"
+  cp -f "$dest" "${PREFIX}/bin/install-tilix-cytracon"
+  chmod 755 "${PREFIX}/bin/tilix-update" "${PREFIX}/bin/install-tilix-cytracon"
+}
+
+install_omarchy_cli() {
+  local src dest wrap
+  mkdir -p "${PREFIX}/bin"
+  src="${HERE}/omarchy-install-tilix"
+  dest="${PREFIX}/bin/omarchy-install-tilix"
+  if [[ -f "$src" ]]; then
+    if [[ "$(readlink -f "$src")" != "$(readlink -f "$dest" 2>/dev/null || true)" ]]; then
+      cp -f "$src" "$dest"
+    fi
+  fi
+  chmod 755 "${PREFIX}/bin/omarchy-install-tilix" 2>/dev/null || true
+
+  wrap="${HERE}/omarchy-user-cli"
+  if [[ ! -f "$wrap" && -f "${PREFIX}/share/tilix/omarchy/omarchy-user-cli" ]]; then
+    wrap="${PREFIX}/share/tilix/omarchy/omarchy-user-cli"
+  fi
+  if [[ -f "$wrap" ]]; then
+    if [[ "$(readlink -f "$wrap")" != "$(readlink -f "${PREFIX}/bin/omarchy" 2>/dev/null || true)" ]]; then
+      cp -f "$wrap" "${PREFIX}/bin/omarchy"
+    fi
+    chmod 755 "${PREFIX}/bin/omarchy"
+  fi
+}
+
+set_default_terminal() {
+  mkdir -p "${HOME}/.config"
+  cat >"${HOME}/.config/xdg-terminals.list" <<'EOF'
+# Terminal emulator preference order for xdg-terminal-exec
+# The first found and valid terminal will be used
+com.gexperts.Tilix.desktop
+foot.desktop
+EOF
+}
+
+main() {
+  case "${1:-}" in
+    -h|--help)
+      cat <<'EOF'
+Usage: omarchy install tilix
+
+Install Cytracon Tilix into ~/.local (no sudo) and make it the default
+Omarchy terminal (Super+Return / xdg-terminal-exec).
+
+Also accepted:
+  omarchy install terminal tilix
+  omarchy-install-tilix
+EOF
+      exit 0
+      ;;
+  esac
+
+  log "Cytracon Tilix für Omarchy"
+  ensure_updater
+  install_omarchy_cli
+  if [[ -x "${PREFIX}/libexec/tilix" ]]; then
+    log "Binary vorhanden — Desktop / Hyprland aktualisieren…"
+    PREFIX="$PREFIX" bash "${PREFIX}/bin/tilix-cytracon" desktop
+  else
+    log "Installiere / aktualisiere…"
+    PREFIX="$PREFIX" bash "${PREFIX}/bin/tilix-cytracon" install
+  fi
+  set_default_terminal
+  if command -v omarchy-notification-send >/dev/null 2>&1; then
+    omarchy-notification-send -g  "Tilix is now the default terminal" "Cytracon Tilix · Super+Return" || true
+  fi
+  ok "Fertig. Super+Return öffnet Tilix."
+  ok "Docs: ${WEB}"
+}
+
+main "$@"
