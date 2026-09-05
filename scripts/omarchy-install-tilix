@@ -121,6 +121,18 @@ EOF
   if command -v omarchy-notification-send >/dev/null 2>&1; then
     omarchy-notification-send -g  "Tilix is now the default terminal" "Cytracon Tilix · Super+Return" || true
   fi
+  PLUGIN_ID="io.github.cytracon.tilix"
+  PLUGIN_URL="https://github.com/cytracon/omarchy-tilix.git"
+  PLUGIN_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/plugins/${PLUGIN_ID}"
+  if command -v omarchy >/dev/null 2>&1; then
+    if [[ -d "$PLUGIN_DIR" ]]; then
+      omarchy plugin enable "$PLUGIN_ID" --section left >/dev/null 2>&1 || true
+      ok "Bar plugin ${PLUGIN_ID} enabled"
+    elif omarchy plugin add "$PLUGIN_URL" --enable --yes; then
+      omarchy bar move "$PLUGIN_ID" --section left >/dev/null 2>&1 || true
+      ok "Bar plugin ${PLUGIN_ID} installed"
+    fi
+  fi
   ok "Fertig. Super+Return öffnet Tilix."
   ok "Docs: ${WEB}"
 }
