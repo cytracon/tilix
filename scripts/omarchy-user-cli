@@ -1,0 +1,65 @@
+#!/bin/bash
+# User-local Omarchy CLI overlay. Forwards everything to packaged omarchy
+# except Cytracon Tilix install/default-terminal routes.
+# Installed as ~/.local/bin/omarchy (PATH ahead of /usr/share/omarchy/bin).
+
+set -euo pipefail
+
+SYS_OMARCHY="${OMARCHY_PATH:-/usr/share/omarchy}/bin/omarchy"
+USER_INSTALL="${HOME}/.local/bin/omarchy-install-tilix"
+
+if [[ ! -x $SYS_OMARCHY ]]; then
+  echo "Packaged omarchy not found: $SYS_OMARCHY" >&2
+  exit 127
+fi
+
+args=("$@")
+
+# omarchy install tilix …
+if ((${#args[@]} >= 2)) && [[ ${args[0]} == "install" && ${args[1]} == "tilix" ]]; then
+  [[ -x $USER_INSTALL ]] || { echo "omarchy-install-tilix fehlt in ~/.local/bin" >&2; exit 127; }
+  exec "$USER_INSTALL" "${args[@]:2}"
+fi
+
+# omarchy install terminal tilix …
+if ((${#args[@]} >= 3)) && [[ ${args[0]} == "install" && ${args[1]} == "terminal" && ${args[2]} == "tilix" ]]; then
+  [[ -x $USER_INSTALL ]] || { echo "omarchy-install-tilix fehlt in ~/.local/bin" >&2; exit 127; }
+  exec "$USER_INSTALL" "${args[@]:3}"
+fi
+
+# omarchy default terminal tilix
+if ((${#args[@]} >= 3)) && [[ ${args[0]} == "default" && ${args[1]} == "terminal" && ${args[2]} == "tilix" ]]; then
+  mkdir -p "${HOME}/.config"
+  cat >"${HOME}/.config/xdg-terminals.list" <<'EOF'
+# Terminal emulator preference order for xdg-terminal-exec
+# The first found and valid terminal will be used
+com.gexperts.Tilix.desktop
+foot.desktop
+EOF
+  if command -v omarchy-notification-send >/dev/null 2>&1; then
+    omarchy-notification-send -g  "Tilix is now the default terminal"
+  else
+    echo "Tilix is now the default terminal"
+  fi
+  exit 0
+fi
+
+if ((${#args[@]} == 0)); then
+  exec "$SYS_OMARCHY"
+fi
+
+if [[ ${args[0]} == "install" ]] && { ((${#args[@]} == 1)) || [[ ${args[1]} == "--help" || ${args[1]} == "-h" ]]; }; then
+  "$SYS_OMARCHY" "${args[@]}"
+  status=$?
+  echo "  omarchy install tilix                                              Install Cytracon Tilix and set it as the default terminal (Super+Return)."
+  exit "$status"
+fi
+
+if [[ ${args[0]} == "install" && ${args[1]:-} == "terminal" ]] && { ((${#args[@]} == 2)) || [[ ${args[2]:-} == "--help" || ${args[2]:-} == "-h" ]]; }; then
+  "$SYS_OMARCHY" "${args[@]}"
+  status=$?
+  echo "  omarchy install terminal tilix                                     Cytracon Tilix (user-local, no sudo)"
+  exit "$status"
+fi
+
+exec "$SYS_OMARCHY" "$@"
