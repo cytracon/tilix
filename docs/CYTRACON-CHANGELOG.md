@@ -1,5 +1,21 @@
 # Cytracon Tilix Changelog
 
+## 1.9.8-cytracon.11 — 2026-09-05
+
+### Omarchy / Hyprland (primary target)
+
+- Native Arch/Omarchy build (`scripts/build-omarchy.sh`, LDC 1.42, gtk-d 3.11)
+- Wayland-first wrapper (`GDK_BACKEND=wayland`) so GTK does not fall back to XWayland
+- `xdg-terminal-exec` desktop keys (`X-TerminalArg*`) so Super+Return / `omarchy launch terminal` can use Tilix
+- `--app-id` from Omarchy TUIs maps to `--new-process --class=` (isolated windows)
+- Hyprland: tag as **terminal** (tiled), not `floating-window` (that forced 875×600 dialogs)
+- Hyprland: keep GTK CSD header bar (Bookmarks/AI/Ops); do not float Tilix as a dialog
+- Hyprland: `require("hypr.tilix")` in user `hyprland.lua`
+- Nautilus extension (Omarchy default file manager) plus existing Nemo actions
+- Icons, gresource, color schemes now shipped in the tarball (Ubuntu package omitted them)
+- Omarchy `theme-set` hook maps `colors.toml` onto the default Tilix profile
+- Installer `desktop` command replaces Ubuntu-Dock-only `dock` (dock remains an alias)
+
 ## 1.9.8-cytracon.10 — 2026-07-15
 
 ### Privacy / public repo
@@ -64,4 +80,3 @@
 
 ## 1.9.8-cytracon.3 — 2026-07-14
 - AI resume list PATH fix + Grok/Codex filesystem fallback
-
