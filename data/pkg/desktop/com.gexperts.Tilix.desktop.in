@@ -1,16 +1,22 @@
 [Desktop Entry]
-Version=1.0
+Version=1.1
 Name=Tilix
-Comment=A tiling terminal for GNOME
-Keywords=shell;prompt;command;commandline;cmd;terminal;
+Comment=A tiling terminal emulator
+Keywords=shell;prompt;command;commandline;cmd;terminal;tilix;cytracon;
 Exec=tilix
+TryExec=tilix
 Terminal=false
 Type=Application
 StartupNotify=true
-Categories=System;TerminalEmulator;X-GNOME-Utilities;
+StartupWMClass=com.gexperts.Tilix
+Categories=System;TerminalEmulator;
 Icon=com.gexperts.Tilix
-DBusActivatable=true
+DBusActivatable=false
 Actions=new-window;new-session;preferences;
+X-TerminalArgExec=-e
+X-TerminalArgDir=--working-directory=
+X-TerminalArgTitle=--title=
+X-TerminalArgAppId=--app-id=
 
 [Desktop Action new-window]
 Name=New Window
