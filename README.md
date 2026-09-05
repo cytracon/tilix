@@ -9,7 +9,9 @@
 **Install script:** [`scripts/tilix-cytracon.sh`](scripts/tilix-cytracon.sh) (install · update · package · publish · desktop)  
 **Primary desktop:** [Omarchy](docs/OMARCHY.md) (Arch + Hyprland). Ubuntu/GNOME still works.
 
-Tiling terminal emulator for Linux (GTK 3 + VTE), forked for **Cytracon ops / Magento / AI workflows**. Upstream Tilix features remain; this fork adds security fixes, header-bar productivity tools, Omarchy/Hyprland integration, and file-manager integration for **Nautilus** and **Nemo**.
+**What it is.** Cytracon Tilix is a tiling terminal for Omarchy (Arch + Hyprland). Use it as Super+Return: split panes, bookmarks, AI CLIs (Grok, Codex, or your own), and ops commands. Shop hosts and SSH paths stay in your Preferences — they are not shipped here.
+
+Tiling terminal emulator for Linux (GTK 3 + VTE). Upstream Tilix features remain; this fork adds security fixes, header-bar productivity tools, Omarchy/Hyprland integration, and file-manager integration for **Nautilus** and **Nemo**.
 
 Original project site: [tilix-web](https://gnunn1.github.io/tilix-web).
 
